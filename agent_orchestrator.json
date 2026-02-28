@@ -1,0 +1,102 @@
+{
+  "version": "1.2",
+  "workflow_global": {
+    "ci_mode": {
+      "value": "local",
+      "description": "Orchestration target. 'local' for standard development, 'github' for cloud verification stage."
+    },
+    "loop_mode": {
+      "value": true,
+      "description": "If true, the orchestrator automatically processes the next task after success. If false, it stops after one task."
+    },
+    "loop_delay_seconds": {
+      "value": 5,
+      "description": "Delay in seconds between tasks when loop_mode is active to avoid API rate limits (e.g., HTTP 429 on Groq)."
+    },
+    "max_task_attempts": {
+      "value": 3,
+      "description": "Master Circuit Breaker: Maximum retries for a single task across all workflow stages before HALT."
+    },
+    "max_continuous_tasks": {
+      "value": 15,
+      "description": "Safety cap: Maximum number of different tasks processed in a single loop run."
+    }
+  },
+  "workflow_local": {
+    "ANALYSE": {
+      "active": { "value": true, "description": "Diagnostic & strategic phase before planning. Recommended for complex goals." },
+      "pause_after": { "value": false, "description": "If true, stops the pipeline after analysis for operator review. If false, continues to PLANNING." },
+      "max_retries": { "value": 3 }
+    },
+    "PLANNING": {
+      "active": { "value": true, "description": "Queen decomposes goals into atomic technical tasks in [AGENT_PROGRESS]." },
+      "max_retries": { "value": 3 }
+    },
+    "EXECUTING": {
+      "active": { "value": true, "description": "Developer implements code and tests. This is the main construction phase." },
+      "max_retries": { "value": 3 }
+    },
+    "LINTING": {
+      "active": { "value": true, "description": "Pedant and automated scripts verify PEP8 and Type compliance." },
+      "max_retries": { "value": 5 }
+    },
+    "TESTING": {
+      "active": { "value": true, "description": "Developer executes the test suite to ensure logical correctness." },
+      "max_retries": { "value": 3 }
+    },
+    "VERIFYING": {
+      "active": { "value": true, "description": "Auditor performs final security and quality verification before completion." },
+      "max_retries": { "value": 3 }
+    },
+    "GHA_PUSHING": {
+      "active": { "value": false, "description": "Automatically push the verified branch to origin (v2 Cloud Stage)." },
+      "max_retries": { "value": 1 }
+    },
+    "GHA_PR_OPENING": {
+      "active": { "value": false, "description": "Automatically open a Pull Request using GitHub CLI (v2 Cloud Stage)." },
+      "max_retries": { "value": 1 }
+    },
+    "GHA_CLOUD_VERIFYING": {
+      "active": { "value": false, "description": "Wait and poll for GitHub Actions result in the cloud (v2 Cloud Stage)." },
+      "max_retries": { "value": 1 }
+    }
+  },
+  "resilience": {
+  	"smart_fallback": {
+  	  "value": true,
+	  "description": "If the primary API provider fails, automatically attempt fallback using the matrix."
+	},
+	"fallback_matrix": {
+	  "GROQ": {
+		"fallback_provider": "MISTRAL",
+		"fallback_model": "mistral-large-latest",
+		"description": "If Groq (Developer/Pedant) fails or rate-limits, redirect to Mistral large model."
+	  },
+	  "MISTRAL": {
+		"fallback_provider": "GROQ",
+		"fallback_model": "llama-3.3-70b-versatile",
+		"description": "If Mistral (Queen/Auditor) fails, fallback to Groq using the robust Llama 70b."
+	  }
+	}
+  },
+  "memory_management": {
+    "yellow_zone_threshold": {
+      "value": 0.7,
+      "description": "Context window usage percentage that triggers context-compressor skill."
+    },
+    "red_zone_threshold": {
+      "value": 0.9,
+      "description": "Context window usage percentage that triggers emergency HALT."
+    }
+  },
+  "logging": {
+    "show_task_id": {
+      "value": true,
+      "description": "Include [TASK-XXX] prefix in every log line for better traceability."
+    },
+    "verbosity": {
+      "value": "INFO",
+      "description": "Terminal output detail level (DEBUG, INFO, WARN, ERROR)."
+    }
+  }
+}

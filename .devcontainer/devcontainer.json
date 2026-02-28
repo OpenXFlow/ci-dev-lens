@@ -1,0 +1,28 @@
+{
+  "name": "Agent-CI-Lens",
+  "build": { "dockerfile": "Dockerfile" },
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.analysis.extraPaths": [
+          "./agent_core",
+          "./src"
+        ],
+        "python.testing.pytestArgs": [
+          "agent_tests",
+          "tests"
+        ],
+        "python.testing.unittestEnabled": false,
+        "python.testing.pytestEnabled": true
+      },
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "tamasfe.even-better-toml"
+      ]
+    }
+  },
+  "remoteUser": "root",
+    "postCreateCommand": "make boot"
+}

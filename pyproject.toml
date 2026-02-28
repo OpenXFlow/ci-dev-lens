@@ -1,0 +1,99 @@
+# The MIT License (MIT)
+# Copyright (c) 2025 Jozef Darida (LinkedIn/Xing)
+# For full license text, see the LICENSE file in the project root.
+
+[project]                               # Core project metadata
+name = "agent-ci-lens"                  # Canonical name of the orchestrator
+version = "0.1.0"                       # Current semantic version
+description = "AI-CI/CD Orchestrator"   # Project summary
+requires-python = ">=3.12"              # Enforces modern Python features
+dependencies = [                        # Core runtime dependencies
+    "requests",                         # Handles LLM API communication
+    "python-dotenv",                    # Loads secrets from .env file
+    "pydantic"                          # Provides strict data validation
+]
+
+[dependency-groups]                     # Development tool specifications
+dev = [                                 # Quality gate toolchain
+    "pytest",                           # Primary test execution engine
+    "pytest-json-report",               # Machine-readable test logging
+    "pytest-cov",                       # TDD coverage measurement
+    "ruff",                             # Tier 1: Fast mechanical linter
+    "mypy"                              # Tier 2: Logical type checker
+]
+
+# --- Ruff: Tier 1 Quality Gate (Formatting & Mechanical Linting) ---
+[tool.ruff]                             # Global Ruff configuration
+line-length = 120                       # Modern width to prevent AI wrap errors
+target-version = "py312"                # Targets Python 3.12 bytecode
+
+[tool.ruff.lint]                        # Linter rule enforcement
+select = [                              # Active rule categories
+    #"D",    # pydocstyle               (Docstring style enforcement)
+    "E",    # pycodestyle errors       (PEP 8 formatting)
+    "W",    # pycodestyle warnings     (Style suggestions)
+    "F",    # Pyflakes                 (Logical errors/unused imports)
+    "I",    # isort                    (Import sort order consistency)
+    "ANN",  # flake8-annotations       (Type hint presence validation)
+    "UP",   # pyupgrade                (Latest syntax enforcement)
+    "S",    # flake8-bandit            (Security/Hardcoded secret scan)
+    "B",    # flake8-bugbear           (Detection of common design flaws)
+    "A",    # flake8-builtins          (Prevents shadowing built-in names)
+    "C4",   # flake8-comprehensions    (Optimizes collection logic)
+    "SIM",  # flake8-simplify          (Sugars and logic simplification)
+    "RUF",  # Ruff-specific            (Internal engine optimizations)
+    "RET",  # flake8-return            (Return statement consistency)
+    "TRY",  # tryceratops              (Exception handling best practices)
+    "ARG",  # flake8-unused-arguments  (Finds defined but unused arguments)
+    "PTH",  # flake8-use-pathlib       (Forces Pathlib over os.path)
+    "ERA",  # eradicate                (Dead/Commented-out code detection)
+    "PERF", # Perflint                 (Performance anti-pattern detection)
+    "FURB"  # refurb                   (Modernizes legacy Python idioms)
+]
+
+ignore = [                              # Intentional rule exemptions
+    "S101",   # Use of assert          (Allowed for pytest suite)
+    "S603",   # Unchecked subprocess   (Safe for internal 'uv' calls)
+    "D211",   # Blank line before class(Enforces compact class style)
+    "D212",   # Multi-line at start    (Allows text to follow triple quotes)
+    "D400",   # First line period      (Allows short descriptive AI titles)
+    "D415",   # First line punctuation (Allows short descriptive AI titles)
+    "TRY003", # Long exception message  (Allows detailed AI error logs)
+	"D100",   # Missing module docstring (Bypassed for rapid file creation)
+    "D104",   # Missing public package docstring Bypassed for __init__.py files)
+    "D417",   # Missing argument descriptions in the docstring (enables ONE-LINER)
+    "D107",   # Missing docstring in __init__	
+]
+
+[tool.ruff.lint.pydocstyle]             # Documentation specifics
+convention = "google"                   # Forces Google Style Python Docstrings
+
+[tool.ruff.format]                      # Automatic formatter settings
+quote-style = "double"                  # Standardizes on double-quoted strings
+indent-style = "space"                  # Enforces PEP 8 space indentation
+line-ending = "auto"                    # Normalizes CRLF/LF line endings
+
+[tool.ruff.lint.per-file-ignores]       # Path-specific rule overrides
+# Disables documentation and type requirements in tests to speed up TDD
+"tests/**/*.py"       = ["D100", "D101", "D102", "D103", "D104", "ANN"]
+"agent_tests/**/*.py" = ["D100", "D101", "D102", "D103", "D104", "ANN"]
+
+# --- Mypy: Tier 2 Quality Gate (Logical & Type Integrity) ---
+[tool.mypy]                             # Static type analysis settings
+python_version = "3.12"                 # Matches runtime environment
+disallow_untyped_defs = true            # Rejects functions without Type Hints
+disallow_incomplete_defs = true         # Rejects partially defined Type Hints
+check_untyped_defs = true               # Scans function bodies without types
+warn_return_any = true                  # Flags functions returning 'Any'
+warn_unused_configs = true              # Checks for dead mypy configuration
+no_implicit_optional = true             # Rejects None unless explicitly typed
+strict_equality = true                  # Forces compatible type comparisons
+warn_redundant_casts = true             # Flags unnecessary type conversions
+ignore_missing_imports = true           # Silences missing stub warnings
+
+[[tool.mypy.overrides]]                 # Library-specific type handling
+module = [                              # External modules without stubs
+    "requests.*",                       # Requests library
+    "pytest_jsonreport.*"               # JSON reporting plugin
+]
+ignore_missing_imports = true           # Silences stub errors for these paths

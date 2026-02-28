@@ -1,0 +1,16 @@
+.___jd_doc
+.agents/.vscode/settings.json
+.claude/cache/
+.ruff_cache
+.venv/
+/.vscode/settings.json
+.env
+.pytest_cache
+__pycache__/
+.git-worktrees/
+agent_context/SESSION.md
+*.log
+.DS_Store
+
+
+

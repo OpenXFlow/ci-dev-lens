@@ -1,0 +1,53 @@
+{
+  "version": "1.0",
+  "profiles": {
+    "queen": {
+      "role": "Orchestrator",
+      "model": "mistral-large-latest",
+      "provider": "mistral",
+      "thinking": "required",
+      "temperature": 0.2,
+      "max_tokens": 8000,
+      "allowed_skills": [
+        "context-compressor",
+        "cascade-logic"
+      ]
+    },
+    "developer": {
+      "role": "Implementer",
+      "model": "llama-3.3-70b-versatile",
+      "provider": "groq",
+      "thinking": "pre-skill",
+      "temperature": 0.1,
+      "max_tokens": 4000,
+      "allowed_skills": [
+        "testing-pro",
+        "uv-manager",
+        "mcp-bridge"
+      ]
+    },
+    "pedant": {
+      "role": "Linter",
+      "model": "llama-3.1-8b-instant",
+      "provider": "groq",
+      "thinking": "disabled",
+      "temperature": 0.0,
+      "max_tokens": 1000,
+      "allowed_skills": [
+        "quality-gate"
+      ]
+    },
+    "auditor": {
+      "role": "Reviewer",
+      "model": "codestral-latest",
+      "provider": "mistral",
+      "thinking": "disabled",
+      "temperature": 0.0,
+      "max_tokens": 2000,
+      "allowed_skills": [
+        "func-audit",
+        "security-guard"
+      ]
+    }
+  }
+}
