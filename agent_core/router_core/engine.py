@@ -3,7 +3,7 @@
 # Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
-"""agent_core/router_core/engine.py - Main cyclical logic (Router) (v 1.3 Pydantic)."""
+"""agent_core/router_core/engine.py - Main cyclical logic (Router) (v 1.4 Pydantic)."""
 
 import re
 import subprocess
@@ -140,6 +140,7 @@ class Router:
                     clean_tid = str(tid).replace("TASK-", "").replace("GOAL-", "")
                     pattern = rf"- \[x\] (TASK-{clean_tid}\b)"
                     if re.search(pattern, content):
+                        # FIX: Added space after hyphen: "- [ ]"
                         content = re.sub(pattern, r"- [ ] \1", content)
                         log(
                             f"Silent Auto-Correction: Task {clean_tid} reverted to [ ].",
@@ -232,9 +233,9 @@ class Router:
             log(f"Processing {tid}", "PIPELINE", tid=tid)
 
             if task.get("is_synthetic"):
-                ctx = self.session.read().get("CONTEXT", "")
+                fb = self.session.read().get("FEEDBACK", "")
 
-                if f"PLANNED:{tid}" in ctx:
+                if f"PLANNED:{tid}" in fb:
                     content = self.tasks.path.read_text(encoding="utf-8")
                     agent_part = content.split("## [AGENT_PROGRESS]")[-1]
 
@@ -300,7 +301,7 @@ class Router:
                     self.session.write_action_log(f"STAGE_FAIL:{state}:{tid}")
 
                     if current_stage_attempts < max_stage_retries:
-                        self.session.write_context(
+                        self.session.write_feedback(
                             f"LAST_ERROR in {state} for {tid}: {res.get('log', 'Unknown error')}"
                         )
 
@@ -340,9 +341,9 @@ class Router:
                         tid=tid,
                     )
 
-                    ctx = self.session.read().get("CONTEXT", "")
-                    if f"PLANNED:{tid}" not in ctx:
-                        self.session.write_context(ctx.strip() + f"\nPLANNED:{tid}")
+                    fb = self.session.read().get("FEEDBACK", "")
+                    if f"PLANNED:{tid}" not in fb:
+                        self.session.write_feedback(fb.strip() + f"\nPLANNED:{tid}")
 
                     task_success = False
                     break

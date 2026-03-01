@@ -1,5 +1,5 @@
 # ==========================================
-# Agent-CI-Lens: Universal Control Panel (v 5.2)
+# Agent-CI-Lens: Universal Control Panel (v 5.3)
 # ==========================================
 .PHONY: help boot validate index lint lint-fix test test-kernel test-all coverage pipeline mock status clean purge env-init
 
@@ -31,7 +31,7 @@ endif
 # HELP
 # ==========================================
 help:
-	@echo "🤖 Agent-CI-Lens (v5.2) Commands:"
+	@echo "🤖 Agent-CI-Lens (v5.3) Commands:"
 	@echo "  Core:"
 	@echo "    make boot        - Full initialization"
 	@echo "    make pipeline    - Start AI Orchestrator"
@@ -47,6 +47,7 @@ help:
 	@echo "  Maintenance:"
 	@echo "    make index       - Update codebase map"
 	@echo "    make purge       - Clear all caches"
+
 # ==========================================
 # BOOT SEQUENCE (Volané z devcontainer.json)
 # ==========================================
@@ -121,11 +122,13 @@ clean:
 		echo "### [STATE]" >> $(SESSION_FILE).tmp; \
 		echo "IDLE" >> $(SESSION_FILE).tmp; \
 		echo "" >> $(SESSION_FILE).tmp; \
+		echo "### [FEEDBACK]" >> $(SESSION_FILE).tmp; \
+		echo "" >> $(SESSION_FILE).tmp; \
 		echo "### [ACTION_LOG]" >> $(SESSION_FILE).tmp; \
 		mv $(SESSION_FILE).tmp $(SESSION_FILE); \
 	else \
 		echo "Creating new session file..."; \
-		printf "# Agent-CI-Lens SESSION\n\n## [USER_SECTION]\n### [CONTEXT]\n\n### [WORKSPACE]\n\n---\n\n## [AGENT_SECTION]\n### [STATE]\nIDLE\n\n### [ACTION_LOG]\n" > $(SESSION_FILE); \
+		printf "# Agent-CI-Lens SESSION\n\n## [USER_SECTION]\n###[CONTEXT]\n\n### [WORKSPACE]\n\n---\n\n## [AGENT_SECTION]\n### [STATE]\nIDLE\n\n### [FEEDBACK]\n\n### [ACTION_LOG]\n" > $(SESSION_FILE); \
 	fi
 	@$(MAKE) purge
 

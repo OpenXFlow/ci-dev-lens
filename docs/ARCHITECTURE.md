@@ -1,9 +1,11 @@
+# 🏛️ ARCHITECTURE.md
+
+```markdown
 # 🏛️ Agent-CI-Lens — Codebase Map (Model 5.3)
 
 This map describes the architecture, logical layers, and operational protocols of the Agent-CI-Lens orchestrator.
 
-
-
+```text
 agent-ci-lens/
 ├── .agents/               # [PROFILES] AI behavior and persona definitions
 │   ├── agents.json        # Profile registry (models, providers, allowed skills)
@@ -112,9 +114,7 @@ agent-ci-lens/
 ├── Makefile               # [CONTROL PANEL] Main interface for humans and GHA
 ├── pyproject.toml         # Python toolchain and dependency management
 └── uv.lock                # Deterministic dependency lockfile
-
-
-
+```
 
 ## I. System States (State Machine)
 The system is a managed process, not a random chat. Every state has a strictly defined responsibility and an assigned agent profile.
@@ -199,3 +199,4 @@ The framework is prepared for a Phase 2 transition to a hybrid execution engine:
 2.  **Lightning Fast Indexing:** Utilizing `tree-sitter` in Rust for sub-millisecond codebase mapping.
 3.  **Security Sandbox:** Low-level execution wrapping using Linux namespaces to strictly isolate generated code.
 4.  **Binary Integrity:** Replacing Python script logic with static binaries for 100% deterministic CI/CD environments.
+```

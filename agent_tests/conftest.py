@@ -98,6 +98,7 @@ def tmp_project(tmp_path: Path) -> Path:
         "### [WORKSPACE]\n\n---\n\n"
         "## [AGENT_SECTION]\n"
         "### [STATE]\nIDLE\n\n"
+        "### [FEEDBACK]\n\n"
         "### [ACTION_LOG]\n"
         "[10:00] Initial setup complete.\n"
         "[10:01] Agent queen finished. Skills: 0\n"

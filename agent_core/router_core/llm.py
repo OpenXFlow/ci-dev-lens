@@ -208,10 +208,11 @@ class PromptBuilder:
         tasks_md = tasks_md_path.read_text(encoding="utf-8") if tasks_md_path.exists() else ""
 
         user_context = session.get("CONTEXT", "")
+        system_feedback = session.get("FEEDBACK", "")
         feedback_section = ""
         rag_section = ""
 
-        if any(keyword in user_context for keyword in ["LAST_ERROR", "FAILED", "REJECT", "VIOLATION"]):
+        if any(keyword in system_feedback for keyword in ["LAST_ERROR", "FAILED", "REJECT", "VIOLATION"]):
             feedback_section = (
                 "\n<CRITICAL_FEEDBACK>\n"
                 "🛑 YOUR PREVIOUS ATTEMPT FAILED.\n"
@@ -230,7 +231,7 @@ class PromptBuilder:
                         continue
                     keyword, _, advice = block.partition("\n")
                     keyword = keyword.strip()
-                    if keyword and keyword in user_context:
+                    if keyword and keyword in system_feedback:
                         relevant_solutions.append(f"- [{keyword}]: {advice.strip()}")
 
                 if relevant_solutions:
@@ -252,7 +253,8 @@ class PromptBuilder:
             f"</current_session_state>\n"
             f"<user_input>\n"
             f"TASK: {task}\n"
-            f"ADDITIONAL INSTRUCTIONS / ERRORS: {user_context}\n"
+            f"ADDITIONAL INSTRUCTIONS: {user_context}\n"
+            f"SYSTEM FEEDBACK / ERRORS: {system_feedback}\n"
             f"</user_input>\n"
             f"{feedback_section}"
             f"{rag_section}"

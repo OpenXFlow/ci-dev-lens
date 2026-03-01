@@ -2,14 +2,14 @@
 
 <p align="center">
   <a href="https://github.com/OpenXFlow/ci-dev-lens">
-    <img src="docs/assets/Agent-CI-Lens.png" alt="CI-DEV-Lens Banner" width="900">
+    <img src="docs/assets/Agent-CI-Lens2.png" alt="CI-DEV-Lens Banner" width="900">
   </a>
 </p>
 
 <p align="left">
   <strong>Deploy an autonomous swarm of AI agents to architect, implement, and audit your Python code with surgical precision.</strong>
   <br>
-  Agent-CI-Lens is a professional-grade framework that bridges the gap between high-level human intent and low-level technical execution.
+  CI-DEV-Len is a professional-grade framework that bridges the gap between high-level human intent and low-level technical execution.
   <br>
   <em>Precision Vision. Autonomous Execution. Zero-Tolerance Quality.</em>
 </p>
@@ -18,9 +18,10 @@ CI-DEV-Lens (Model 5.3) is not just another AI chat; it is a Managed State Machi
 
 ### ✨ Key Capabilities
 
--   🧠 **Strategic State Machine:** Coordinated workflow through **ANALYSE**, **PLANNING**, **EXECUTING**, and **VERIFYING** states.
+-   🧠 **Sequential Multi-Stage Pipeline:** Orchestrates agents in a strictly ordered relay race (ANALYSE → PLANNING → EXECUTING → LINTING → TESTING → VERIFYING). This ensures context continuity and prevents logic fragmentation.
+-   🔄 **Autonomous Feedback Loops:**  If a Quality Gate (Ruff, Mypy, or Pytest) fails, the system automatically routes raw error logs back to the responsible agent for immediate self-correction.
+-   ☁️ **Cloud-Native Integration (GHA v2):** Seamless transition from local verification to automated cloud stages including branch management, **Automated PR Creation**, and remote **GitHub Actions status polling**.
 -   🛡️ **Bimetric Isolation:** Strictly separates `[USER_SECTION]` instructions from `[AGENT_SECTION]` activity to ensure the AI never loses sight of human priorities.
--   🔄 **Self-Healing Development:** Automatic detection of Ruff, Mypy, or Pytest failures. Agents analyze logs and iterate until the code is "Green."
 -   ⚡ **API Resilience & Smart Fallback:** Native support for **Key Rotation** and automatic provider switching (e.g., failing over from Groq to Mistral during rate limits).
 -   ⚙️ **Pydantic-Driven Architecture:** Entire system configuration and agent registries are validated by strict Pydantic V2 schemas for absolute reliability.
 -   📉 **Smart Context Compression:** Integrated skills to prune activity logs and maximize token efficiency without losing critical project memory.
@@ -95,6 +96,7 @@ Copy and paste this into your `agent_context/TASKS.md` to see the swarm in actio
 
 | Resource | Description |
 | :--- | :--- |
+| [⚙️ Architecture](docs/ci_architecture/flow_diagrams_operations_map.md) | Visual architectural map |
 | [🕹️ Terminal Interface](docs/TERMINAL_CMD.md) | Full guide to `make` commands (`boot`, `pipeline`, `mock`, `status`). |
 | [⚙️ System Configuration](docs/CONFIGURATION.md) | Tuning `agent_orchestrator.json` and the Smart Parser. |
 | [🖥️ User Interface](docs/USER_INTERFACE.md) | Understanding the Bimetric Markdown communication. |
@@ -110,3 +112,9 @@ We welcome contributions to the Core Hypervisor and the Agent Skill-set. Please 
 ## License
 
 This project is licensed under the **MIT License** - see the [LICENSE.md](LICENSE.md) file for details.
+
+<p align="center">
+  <a href="https://github.com/OpenXFlow/ci-dev-lens">
+    <img src="docs/assets/Agent-CI-Lens.png" alt="CI-DEV-Lens Banner" width="900">
+  </a>
+</p>

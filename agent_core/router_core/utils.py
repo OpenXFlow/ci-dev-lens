@@ -3,7 +3,7 @@
 # Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
-"""agent_core/router_core/utils.py - Shared utilities and loaders (v 1.3 Pydantic)."""
+"""agent_core/router_core/utils.py - Shared utilities and loaders (v 1.4 Pydantic)."""
 
 import json
 import shutil
@@ -18,9 +18,29 @@ ROOT = Path(__file__).parent.parent.parent.resolve()
 # Dynamic detection of 'uv'
 UV_PATH = shutil.which("uv") or "uv"
 
+# Updated MOCK Responses to match E2E Reference files
 DEFAULT_MOCK_RESPONSES = {
-    "queen": "MOCK: Queen plan generated.",
-    "developer": "MOCK: Developer code written.",
+    "queen": (
+        "MOCK: Queen planning complete.\n"
+        '<file_write path="agent_context/TASKS.md">\n'
+        "# Agent-CI-Lens TASKS\n\n"
+        "## [USER_QUEUE]\n"
+        "- [ ] GOAL-001: Create a Palindrome checker.\n\n"
+        "---\n\n"
+        "## [AGENT_PROGRESS]\n"
+        "- [x] TASK-000: System initialization [attempts: 0]\n"
+        "- [ ] TASK-001: Implement Palindrome logic and tests [attempts: 0]\n"
+        "</file_write>"
+    ),
+    "developer": (
+        "MOCK: Developer logic generated.\n"
+        '<file_write path="src/string_utils.py">\n'
+        '"""\nThis module contains string utility functions.\n"""\n\nimport re\n\ndef is_palindrome(text: str) -> bool:\n    """\n    Checks if a given string is a palindrome.\n    """\n    cleaned_text = re.sub(r\'\\W+\', \'\', text).lower()\n    return cleaned_text == cleaned_text[::-1]\n'
+        "</file_write>\n"
+        '<file_write path="tests/test_string_utils.py">\n'
+        'import pytest\nfrom src.string_utils import is_palindrome\n\ndef test_is_palindrome():\n    assert is_palindrome("madam") is True\n'
+        "</file_write>"
+    ),
     "pedant": "RESULT:PASS",
     "auditor": "VERIFICATION SUCCESSFUL",
     "git-manager": "RESULT:PUSH_OK",
@@ -45,11 +65,7 @@ def log(msg: str, level: str = "INFO", tid: str | None = None) -> None:
 
 
 def load_env() -> EnvConfig:
-    """Load and parse variables from the .env file using Pydantic.
-
-    Returns:
-        EnvConfig object with dynamic credential parsing.
-    """
+    """Load and parse variables from the .env file."""
     env_path = ROOT / ".env"
     env_dict = {}
 
@@ -60,7 +76,6 @@ def load_env() -> EnvConfig:
                     key, _, value = line.partition("=")
                     env_dict[key.strip()] = value.strip()
 
-    # Pydantic handles validation, defaults, and credential parsing
     return EnvConfig.model_validate(env_dict)
 
 

@@ -8,7 +8,6 @@
 .pytest_cache
 __pycache__/
 .git-worktrees/
-agent_context/SESSION.md
 *.log
 .DS_Store
 
