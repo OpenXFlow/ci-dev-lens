@@ -4,17 +4,10 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-agent_tests/test_models.py - Unit tests for Pydantic configuration schemas (v 1.1)
+agent_tests/test_models.py - Unit tests for Pydantic configuration schemas (v 1.2)
 """
 
-import pytest
-from pydantic import ValidationError
-
-from agent_core.router_core.models import (
-    EnvConfig,
-    AgentsRegistryModel,
-    OrchestratorConfigModel
-)
+from agent_core.router_core.models import AgentsRegistryModel, EnvConfig, OrchestratorConfigModel
 
 
 class TestEnvConfig:
@@ -32,18 +25,18 @@ class TestEnvConfig:
             "GROQ_BASE_URL": "https://api.groq.com",
             "CUSTOM_API_KEY": "secret_abc",
             # CUSTOM_BASE_URL is missing, should be None
-            "MOCK": "true"
+            "MOCK": "true",
         }
         config = EnvConfig.model_validate(raw_env)
-        
+
         # Check System flags
         assert config.MOCK is True
-        
+
         # Check Dynamic Credentials
         assert "GROQ" in config.credentials
         assert config.credentials["GROQ"].api_key == "gsk_123"
         assert config.credentials["GROQ"].base_url == "https://api.groq.com"
-        
+
         assert "CUSTOM" in config.credentials
         assert config.credentials["CUSTOM"].api_key == "secret_abc"
         assert config.credentials["CUSTOM"].base_url is None
@@ -62,9 +55,9 @@ class TestAgentsRegistry:
                     "thinking": "required",
                     "temperature": 0.2,
                     "max_tokens": 8000,
-                    "allowed_skills": ["cascade-logic"]
+                    "allowed_skills": ["cascade-logic"],
                 }
-            }
+            },
         }
         registry = AgentsRegistryModel.model_validate(data)
         assert registry.version == "1.0"
@@ -76,32 +69,27 @@ class TestOrchestratorConfig:
     def test_valid_config_parsing(self) -> None:
         """Verify that the complex nested config parses correctly."""
         data = {
-            "version": "1.2",
+            "version": "1.3",
             "workflow_global": {
                 "ci_mode": {"value": "local"},
                 "loop_mode": {"value": True},
                 "loop_delay_seconds": {"value": 15},
                 "max_task_attempts": {"value": 3},
-                "max_continuous_tasks": {"value": 10}
+                "max_continuous_tasks": {"value": 10},
             },
-            "workflow_local": {
-                "ANALYSE": {"active": {"value": True}, "max_retries": {"value": 3}}
-            },
+            "workflow_local": {"ANALYSE": {"active": {"value": True}, "max_retries": {"value": 3}}},
             "resilience": {
                 "smart_fallback": {"value": True},
-                "fallback_matrix": {
-                    "GROQ": {"fallback_provider": "MISTRAL", "fallback_model": "mistral-large"}
-                }
+                "http_connect_timeout": {"value": 10.0},
+                "http_read_timeout": {"value": 60.0},
+                "retry_attempts": {"value": 5},
+                "retry_backoff_factor": {"value": 2.0},
+                "fallback_matrix": {"GROQ": {"fallback_provider": "MISTRAL", "fallback_model": "mistral-large"}},
             },
-            "memory_management": {
-                "yellow_zone_threshold": {"value": 0.7},
-                "red_zone_threshold": {"value": 0.9}
-            },
-            "logging": {
-                "show_task_id": {"value": True},
-                "verbosity": {"value": "INFO"}
-            }
+            "memory_management": {"yellow_zone_threshold": {"value": 0.7}, "red_zone_threshold": {"value": 0.9}},
+            "logging": {"show_task_id": {"value": True}, "verbosity": {"value": "INFO"}},
         }
         config = OrchestratorConfigModel.model_validate(data)
         assert config.workflow_global.loop_delay_seconds.value == 15
         assert config.resilience.fallback_matrix["GROQ"].fallback_provider == "MISTRAL"
+        assert config.resilience.retry_attempts.value == 5

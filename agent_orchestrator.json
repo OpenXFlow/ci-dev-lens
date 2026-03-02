@@ -1,5 +1,5 @@
 {
-  "version": "1.2",
+  "version": "1.3",
   "workflow_global": {
     "ci_mode": {
       "value": "local",
@@ -62,22 +62,38 @@
     }
   },
   "resilience": {
-  	"smart_fallback": {
-  	  "value": true,
-	  "description": "If the primary API provider fails, automatically attempt fallback using the matrix."
-	},
-	"fallback_matrix": {
-	  "GROQ": {
-		"fallback_provider": "MISTRAL",
-		"fallback_model": "mistral-large-latest",
-		"description": "If Groq (Developer/Pedant) fails or rate-limits, redirect to Mistral large model."
-	  },
-	  "MISTRAL": {
-		"fallback_provider": "GROQ",
-		"fallback_model": "llama-3.3-70b-versatile",
-		"description": "If Mistral (Queen/Auditor) fails, fallback to Groq using the robust Llama 70b."
-	  }
-	}
+    "smart_fallback": {
+      "value": true,
+      "description": "If the primary API provider fails, automatically attempt fallback using the matrix."
+    },
+    "http_connect_timeout": {
+      "value": 10.0,
+      "description": "Timeout in seconds to establish a network connection. Fails fast if the server is completely down."
+    },
+    "http_read_timeout": {
+      "value": 60.0,
+      "description": "Timeout in seconds to wait for LLM token generation to complete."
+    },
+    "retry_attempts": {
+      "value": 3,
+      "description": "Maximum number of HTTP retries using stamina (handles 429 and 50x errors)."
+    },
+    "retry_backoff_factor": {
+      "value": 1.5,
+      "description": "Exponential backoff multiplier for stamina retry delays."
+    },
+    "fallback_matrix": {
+      "GROQ": {
+        "fallback_provider": "MISTRAL",
+        "fallback_model": "mistral-large-latest",
+        "description": "If Groq (Developer/Pedant) fails or rate-limits, redirect to Mistral large model."
+      },
+      "MISTRAL": {
+        "fallback_provider": "GROQ",
+        "fallback_model": "llama-3.3-70b-versatile",
+        "description": "If Mistral (Queen/Auditor) fails, fallback to Groq using the robust Llama 70b."
+      }
+    }
   },
   "memory_management": {
     "yellow_zone_threshold": {

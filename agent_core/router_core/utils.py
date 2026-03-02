@@ -3,12 +3,14 @@
 # Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
-"""agent_core/router_core/utils.py - Shared utilities and loaders (v 1.4 Pydantic)."""
+"""agent_core/router_core/utils.py - Shared utilities and loaders (v 1.7 Pydantic + Structlog)."""
 
 import json
+import logging
 import shutil
-from datetime import datetime
 from pathlib import Path
+
+import structlog
 
 from .models import AgentsRegistryModel, EnvConfig, OrchestratorConfigModel
 
@@ -18,7 +20,7 @@ ROOT = Path(__file__).parent.parent.parent.resolve()
 # Dynamic detection of 'uv'
 UV_PATH = shutil.which("uv") or "uv"
 
-# Updated MOCK Responses to match E2E Reference files
+# Updated MOCK Responses to match E2E Reference files and parser rules
 DEFAULT_MOCK_RESPONSES = {
     "queen": (
         "MOCK: Queen planning complete.\n"
@@ -35,10 +37,14 @@ DEFAULT_MOCK_RESPONSES = {
     "developer": (
         "MOCK: Developer logic generated.\n"
         '<file_write path="src/string_utils.py">\n'
-        '"""\nThis module contains string utility functions.\n"""\n\nimport re\n\ndef is_palindrome(text: str) -> bool:\n    """\n    Checks if a given string is a palindrome.\n    """\n    cleaned_text = re.sub(r\'\\W+\', \'\', text).lower()\n    return cleaned_text == cleaned_text[::-1]\n'
+        '"""\nThis module contains string utility functions.\n"""\n\nimport re\n\n'
+        'def is_palindrome(text: str) -> bool:\n    """\n    Checks if a given string is a palindrome.\n    """\n'
+        "    cleaned_text = re.sub(r'\\W+', '', text).lower()\n"
+        "    return cleaned_text == cleaned_text[::-1]\n"
         "</file_write>\n"
         '<file_write path="tests/test_string_utils.py">\n'
-        'import pytest\nfrom src.string_utils import is_palindrome\n\ndef test_is_palindrome():\n    assert is_palindrome("madam") is True\n'
+        "import pytest\nfrom src.string_utils import is_palindrome\n\n"
+        'def test_is_palindrome_simple():\n    assert is_palindrome("madam") is True\n'
         "</file_write>"
     ),
     "pedant": "RESULT:PASS",
@@ -47,21 +53,74 @@ DEFAULT_MOCK_RESPONSES = {
 }
 
 
+_logger_configured = False
+
+
+def _setup_logger() -> structlog.BoundLogger:
+    """Configures Structlog globally with dual renderers based on CI_MODE."""
+    global _logger_configured
+
+    if not _logger_configured:
+        env = load_env()
+
+        if env.CI_MODE == "github":
+            processors = [
+                structlog.processors.TimeStamper(fmt="iso"),
+                structlog.processors.add_log_level,
+                structlog.processors.dict_tracebacks,
+                structlog.processors.JSONRenderer(),
+            ]
+        else:
+            processors = [
+                structlog.processors.TimeStamper(fmt="%H:%M:%S", utc=False),
+                structlog.processors.add_log_level,
+                # CHIRURGICKÁ OPRAVA: Filtrovanie kľúčov pomocou lambda procesora (oprava AttributeError)
+                lambda _, __, ed: {k: v for k, v in ed.items() if k not in ("tid", "internal_level")},
+                structlog.dev.ConsoleRenderer(colors=True, exception_formatter=structlog.dev.plain_traceback),
+            ]
+
+        structlog.configure(
+            processors=processors,
+            wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+            logger_factory=structlog.PrintLoggerFactory(),
+            cache_logger_on_first_use=True,
+        )
+        _logger_configured = True
+
+    return structlog.get_logger()
+
+
 def log(msg: str, level: str = "INFO", tid: str | None = None) -> None:
-    """Format and print logs to the terminal."""
-    timestamp = datetime.now().strftime("%H:%M:%S")
+    """Format and print logs to the terminal using structured logging."""
+    logger = _setup_logger()
+    env = load_env()
 
     icons = {"INFO": "ℹ️ ", "OK": "✅", "WARN": "⚠️ ", "ERROR": "❌", "STATE": "🔄", "PIPELINE": "🚀"}  # noqa: RUF001
 
-    task_prefix = ""
-    if tid:
-        str_tid = str(tid)
-        if str_tid.startswith("TASK-") or str_tid.startswith("GOAL-") or str_tid == "START":
-            task_prefix = f"[{str_tid}] "
-        else:
-            task_prefix = f"[TASK-{str_tid}] "
+    # Format human-readable message for Console
+    formatted_msg = msg
+    if env.CI_MODE != "github":
+        task_prefix = ""
+        if tid:
+            str_tid = str(tid)
+            if str_tid.startswith("TASK-") or str_tid.startswith("GOAL-") or str_tid == "START":
+                task_prefix = f"[{str_tid}] "
+            else:
+                task_prefix = f"[TASK-{str_tid}] "
 
-    print(f"[{timestamp}] {task_prefix}{icons.get(level, '  ')} {msg}")
+        icon = icons.get(level, "  ")
+        formatted_msg = f"{task_prefix}{icon} {msg}"
+
+    # Bind metadata (will be hidden in Console by lambda, but present in JSON)
+    bound_logger = logger.bind(tid=str(tid) if tid else None, internal_level=level)
+
+    # Log based on severity
+    if level == "ERROR":
+        bound_logger.error(formatted_msg)
+    elif level == "WARN":
+        bound_logger.warning(formatted_msg)
+    else:
+        bound_logger.info(formatted_msg)
 
 
 def load_env() -> EnvConfig:

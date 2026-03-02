@@ -38,7 +38,7 @@ def fast_tests_no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
 def create_mock_config() -> OrchestratorConfigModel:
     return OrchestratorConfigModel.model_validate(
         {
-            "version": "1.2",
+            "version": "1.3",
             "workflow_global": {
                 "ci_mode": {"value": "local"},
                 "loop_mode": {"value": True},
@@ -56,6 +56,10 @@ def create_mock_config() -> OrchestratorConfigModel:
             },
             "resilience": {
                 "smart_fallback": {"value": False},
+                "http_connect_timeout": {"value": 10.0},
+                "http_read_timeout": {"value": 30.0},
+                "retry_attempts": {"value": 3},
+                "retry_backoff_factor": {"value": 1.5},
                 "fallback_matrix": {},
             },
             "memory_management": {

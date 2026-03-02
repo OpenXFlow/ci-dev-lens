@@ -3,7 +3,7 @@
 # Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
-"""agent_core/router_core/models.py - Pydantic schemas for orchestrator configuration (v 1.3)."""
+"""agent_core/router_core/models.py - Pydantic schemas for orchestrator configuration (v 1.4)."""
 
 from typing import Any
 
@@ -151,6 +151,10 @@ class ResilienceConfig(BaseModel):
     """System resilience settings."""
 
     smart_fallback: SettingValueBool
+    http_connect_timeout: SettingValueFloat
+    http_read_timeout: SettingValueFloat
+    retry_attempts: SettingValueInt
+    retry_backoff_factor: SettingValueFloat
     fallback_matrix: dict[str, FallbackMatrixEntry]
 
 

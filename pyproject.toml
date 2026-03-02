@@ -7,10 +7,13 @@ name = "agent-ci-lens"                  # Canonical name of the orchestrator
 version = "0.1.0"                       # Current semantic version
 description = "AI-CI/CD Orchestrator"   # Project summary
 requires-python = ">=3.12"              # Enforces modern Python features
+
 dependencies = [                        # Core runtime dependencies
-    "requests",                         # Handles LLM API communication
-    "python-dotenv",                    # Loads secrets from .env file
-    "pydantic"                          # Provides strict data validation
+    "httpx>=0.28.1",                    # Modern HTTP client replacing urllib/requests
+    "stamina>=25.2.0",                  # Advanced retry logic for API resilience
+    "structlog>=25.5.0",                # Structured JSON/Console logging
+    "rich>=14.3.3",                     # Terminal UI (required by structlog ConsoleRenderer)
+    "pydantic>=2.0.0",                  # Strict data validation (Model 5.3+)]
 ]
 
 [dependency-groups]                     # Development tool specifications

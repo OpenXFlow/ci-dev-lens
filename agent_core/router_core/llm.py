@@ -3,10 +3,10 @@
 # Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
-"""agent_core/router_core/llm.py - LLM infrastructure (v 1.6 Pydantic)."""
+"""agent_core/router_core/llm.py - LLM infrastructure (v 1.9 Pydantic + Httpx)."""
 
-import json
-import urllib.request
+import httpx
+import stamina
 
 from .models import AgentProfile, EnvConfig, OrchestratorConfigModel
 from .utils import DEFAULT_MOCK_RESPONSES, count_tokens, log
@@ -39,6 +39,12 @@ class APIClient:
         self.mock = mock
         self.config = config
 
+    def _should_retry(self, exc: Exception) -> bool:
+        """Backoff hook: retry only on rate limits (429), server errors (50x), or network drops."""
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code == 429 or exc.response.status_code >= 500
+        return isinstance(exc, httpx.RequestError)
+
     def _try_provider(
         self,
         provider: str,
@@ -60,8 +66,8 @@ class APIClient:
             except Exception as e:
                 last_error = e
                 err_str = str(e)
-                # Rotate key if rate-limited or unauthorized
-                if any(code in err_str for code in ["429", "Too Many", "401", "403"]):
+                # Rotate key if rate-limited or unauthorized AFTER stamina gives up
+                if "429" in err_str or "401" in err_str or "403" in err_str:
                     log(
                         f"Key for {provider} failed ({err_str}). Rotating to next key if available...",
                         "WARN",
@@ -127,9 +133,6 @@ class APIClient:
                 if not fb_keys_str or "_CHANGE_ME" in fb_keys_str:
                     raise RuntimeError(f"Fallback key for {fb_provider} is missing from .env.") from e
 
-                # Clone profile via Pydantic copy (if needed) or just modify dict representation
-                # Since AgentProfile is frozen/model, we create a temporary dict logic or
-                # simply pass modified args. Here we modify the profile object logic slightly.
                 fallback_profile = profile.model_copy()
                 fallback_profile.provider = fb_provider.lower()
                 fallback_profile.model = fb_model
@@ -156,35 +159,53 @@ class APIClient:
         key: str,
         base_url: str | None,
     ) -> str:
-        """Universal execution using standard OpenAI schema."""
+        """Universal execution using standard OpenAI schema with robust retries."""
         if not base_url:
             raise ValueError(f"Missing {provider}_BASE_URL in your .env file.")
 
         if not base_url.startswith(("http://", "https://")):
             raise ValueError(f"Security Error: Base URL for {provider} must start with http:// or https://")
 
-        data = json.dumps(
-            {
-                "model": p.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": p.max_tokens,
-                "temperature": p.temperature,
-            }
-        ).encode("utf-8")
+        payload = {
+            "model": p.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": p.max_tokens,
+            "temperature": p.temperature,
+        }
 
-        req = urllib.request.Request(  # noqa: S310
-            base_url,
-            data=data,
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-                "User-Agent": "Agent-CI-Lens/1.0",
-            },
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "User-Agent": "Agent-CI-Lens/1.0",
+        }
+
+        timeout_cfg = httpx.Timeout(
+            connect=self.config.resilience.http_connect_timeout.value,
+            read=self.config.resilience.http_read_timeout.value,
+            write=10.0,
+            pool=10.0,
         )
 
-        with urllib.request.urlopen(req) as r:  # noqa: S310
-            response_payload = json.loads(r.read())
-            return str(response_payload["choices"][0]["message"]["content"])
+        attempts = self.config.resilience.retry_attempts.value
+        backoff = self.config.resilience.retry_backoff_factor.value
+
+        for attempt in stamina.retry_context(
+            on=self._should_retry,
+            attempts=attempts,
+            wait_initial=1.0,
+            wait_max=30.0,
+            wait_exp_base=backoff,
+        ):
+            # Opravené vnorenie (SIM117) do jedného riadku
+            with attempt, httpx.Client(timeout=timeout_cfg) as client:
+                resp = client.post(base_url, json=payload, headers=headers)
+                resp.raise_for_status()
+
+                response_payload = resp.json()
+                return str(response_payload["choices"][0]["message"]["content"])
+
+        # Opravený chýbajúci return (RET503) pre prípad, že cyklus skončí bez návratu
+        raise RuntimeError(f"LLM API Call to {provider} failed exhaustively after {attempts} attempts.")
 
 
 class PromptBuilder:
@@ -192,7 +213,6 @@ class PromptBuilder:
 
     def build(self, agent: str, profile: AgentProfile, task: str, session: dict[str, str]) -> str:  # noqa: ARG002
         # Load assets from Model 5.3 structure
-        # Relative paths logic kept from original utils
         from .utils import ROOT
 
         persona_path = ROOT / f".agents/{agent}.md"
@@ -221,7 +241,6 @@ class PromptBuilder:
                 "</CRITICAL_FEEDBACK>\n"
             )
 
-            # Simple RAG from agent_context/TROUBLESHOOTING.md
             tb_path = ROOT / "agent_context" / "TROUBLESHOOTING.md"
             if tb_path.exists():
                 tb_content = tb_path.read_text(encoding="utf-8")
