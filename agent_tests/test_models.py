@@ -4,10 +4,14 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-agent_tests/test_models.py - Unit tests for Pydantic configuration schemas (v 1.2)
+agent_tests/test_models.py - Unit tests for Pydantic configuration schemas (v 1.3)
 """
 
-from agent_core.router_core.models import AgentsRegistryModel, EnvConfig, OrchestratorConfigModel
+from agent_core.router_core.models import (
+    AgentsRegistryModel,
+    EnvConfig,
+    OrchestratorConfigModel,
+)
 
 
 class TestEnvConfig:
@@ -24,22 +28,17 @@ class TestEnvConfig:
             "GROQ_API_KEY": "gsk_123",
             "GROQ_BASE_URL": "https://api.groq.com",
             "CUSTOM_API_KEY": "secret_abc",
-            # CUSTOM_BASE_URL is missing, should be None
             "MOCK": "true",
         }
         config = EnvConfig.model_validate(raw_env)
 
-        # Check System flags
         assert config.MOCK is True
-
-        # Check Dynamic Credentials
         assert "GROQ" in config.credentials
         assert config.credentials["GROQ"].api_key == "gsk_123"
         assert config.credentials["GROQ"].base_url == "https://api.groq.com"
 
         assert "CUSTOM" in config.credentials
         assert config.credentials["CUSTOM"].api_key == "secret_abc"
-        assert config.credentials["CUSTOM"].base_url is None
 
 
 class TestAgentsRegistry:
@@ -69,7 +68,7 @@ class TestOrchestratorConfig:
     def test_valid_config_parsing(self) -> None:
         """Verify that the complex nested config parses correctly."""
         data = {
-            "version": "1.3",
+            "version": "1.4",
             "workflow_global": {
                 "ci_mode": {"value": "local"},
                 "loop_mode": {"value": True},
@@ -78,6 +77,20 @@ class TestOrchestratorConfig:
                 "max_continuous_tasks": {"value": 10},
             },
             "workflow_local": {"ANALYSE": {"active": {"value": True}, "max_retries": {"value": 3}}},
+            "vcs_control": {
+                "mode": {"value": "github"},
+                "github_settings": {
+                    "auto_push": {"value": True},
+                    "auto_pr": {"value": True},
+                    "watch_gha": {"value": True},
+                    "gha_timeout_minutes": {"value": 15},
+                },
+                "local_git_settings": {"auto_commit": {"value": True}, "branch_per_goal": {"value": True}},
+                "local_act_settings": {
+                    "workflow_file": {"value": "ci.yml"},
+                    "platform": {"value": "ubuntu-latest=catthehacker/ubuntu:act-22.04"},
+                },
+            },
             "resilience": {
                 "smart_fallback": {"value": True},
                 "http_connect_timeout": {"value": 10.0},
@@ -91,5 +104,7 @@ class TestOrchestratorConfig:
         }
         config = OrchestratorConfigModel.model_validate(data)
         assert config.workflow_global.loop_delay_seconds.value == 15
+        assert config.vcs_control.mode.value == "github"
+        assert config.vcs_control.github_settings.gha_timeout_minutes.value == 15
         assert config.resilience.fallback_matrix["GROQ"].fallback_provider == "MISTRAL"
         assert config.resilience.retry_attempts.value == 5

@@ -1,11 +1,7 @@
-# Agent-CI-Lens TASKS
-
 ## [USER_QUEUE]
-- [ ] GOAL-001: Create a String Utility module.
-   - Requirement: Implement `is_palindrome(text: str) -> bool` in `src/string_utils.py`.
-   - Requirement: Logic must be case-insensitive and ignore non-alphanumeric characters (e.g., "Race car!" -> True).
-   - Requirement: Create comprehensive tests in `tests/test_string_utils.py`.
-   - Requirement: Use Google Style Docstrings.
+- [ ] GOAL-001: Implement a simple greeting function.
+   - Requirement: Create `src/hello.py` with a function `greet(name: str) -> str` that returns "Hello, {name}!".
+   - Requirement: Create a corresponding test in `tests/test_hello.py`.
 
 ---
 

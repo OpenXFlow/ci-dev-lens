@@ -1,20 +1,26 @@
-# Agent-CI-Lens: Long-Term Memory
+# Agent-CI-Lens: Long-Term Memory (Model 6.0)
 
 ## Project Context
-This project is a Python calculator (`src/calculator.py`).
-- **Current Run Context:** Always check `agent_context/SESSION.md` for specific operator instructions and the active state.
-- **Goal Registry:** Always refer to `agent_context/TASKS.md` for high-level requirements (User Queue) and technical progress tracking.
+This project is a Python-based Agentic CI/CD Orchestrator (Agent-CI-Lens).
+- **Core Engine:** Pydantic-backed State Machine (v1.5).
+- **Networking:** Hardened stack using `httpx` (sync context manager) and `stamina` for retries.
+- **VCS Strategy:** Native Python integration replacing legacy bash scripts.
 
 ## Technology Stack
 - Language: Python 3.12
 - Manager: uv
-- Testing: pytest
+- Libraries: httpx, stamina, structlog, rich, pydantic.
 
-## Execution Strategy
-- ACTIVE GOAL: Always prioritize requirements defined in `agent_context/TASKS.md` under `## [USER_QUEUE]`.
-- TASK TRACKING: Technical steps are managed in `## [AGENT_PROGRESS]`.
+## Execution & Delivery Strategy
+- **Standard Flow:** Analyse -> Planning -> Executing -> Linting -> Testing -> Verifying -> VCS_DELIVERY.
+- **VCS Delivery:** Controlled via `agent_orchestrator.json` (vcs_control).
+- **Modes:** 
+  1. `local_git`: Local branches and atomic commits.
+  2. `github`: Automated PR creation and GHA polling via GitHub REST API.
+  3. `local_act`: (Planned) Local GHA simulation.
 
 ## Architectural Constraints
-- STRICT TDD: No production code without a corresponding test.
-- GOOGLE STYLE: Use Google Style Docstrings for all public methods.
-- COMPLETION: Do not create redundant tasks. Once the requirements in `[USER_QUEUE]` are met and tests pass, the goal is finished.
+- **Bimetric Separation:** System state and flags belong in `agent_context/SESSION.md` -> `### [FEEDBACK]`. Never write to `[USER_SECTION]`.
+- **TDD Enforcement:** Every logic change requires a corresponding test in `tests/`.
+- **Zero Theater:** No task is marked completed without verified tool output (Pass/Fail).
+- **Self-Correction:** If VCS_DELIVERY (GHA) fails, the engine must route back to EXECUTING to fix cloud-specific issues.

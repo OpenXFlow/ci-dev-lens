@@ -1,5 +1,5 @@
 # The MIT License (MIT)
-# Copyright (c) 2025 Jozef Darida (LinkedIn/Xing)
+# Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
 [project]                               # Core project metadata
@@ -8,16 +8,18 @@ version = "0.1.0"                       # Current semantic version
 description = "AI-CI/CD Orchestrator"   # Project summary
 requires-python = ">=3.12"              # Enforces modern Python features
 
-dependencies = [                        # Core runtime dependencies
+dependencies =[                        # Core runtime dependencies
     "httpx>=0.28.1",                    # Modern HTTP client replacing urllib/requests
     "stamina>=25.2.0",                  # Advanced retry logic for API resilience
     "structlog>=25.5.0",                # Structured JSON/Console logging
     "rich>=14.3.3",                     # Terminal UI (required by structlog ConsoleRenderer)
-    "pydantic>=2.0.0",                  # Strict data validation (Model 5.3+)]
+    "pydantic>=2.0.0",                  # Strict data validation (Model 5.3+)
+    "instructor>=1.14.5",               # Structured LLM outputs
+    "typer>=0.24.1",                    # Modern CLI framework
 ]
 
 [dependency-groups]                     # Development tool specifications
-dev = [                                 # Quality gate toolchain
+dev =[                                 # Quality gate toolchain
     "pytest",                           # Primary test execution engine
     "pytest-json-report",               # Machine-readable test logging
     "pytest-cov",                       # TDD coverage measurement
@@ -30,8 +32,9 @@ dev = [                                 # Quality gate toolchain
 line-length = 120                       # Modern width to prevent AI wrap errors
 target-version = "py312"                # Targets Python 3.12 bytecode
 
+
 [tool.ruff.lint]                        # Linter rule enforcement
-select = [                              # Active rule categories
+select =[                              # Active rule categories
     #"D",    # pydocstyle               (Docstring style enforcement)
     "E",    # pycodestyle errors       (PEP 8 formatting)
     "W",    # pycodestyle warnings     (Style suggestions)
@@ -54,14 +57,14 @@ select = [                              # Active rule categories
     "FURB"  # refurb                   (Modernizes legacy Python idioms)
 ]
 
-ignore = [                              # Intentional rule exemptions
+ignore =[                              # Intentional rule exemptions
     "S101",   # Use of assert          (Allowed for pytest suite)
     "S603",   # Unchecked subprocess   (Safe for internal 'uv' calls)
     "D211",   # Blank line before class(Enforces compact class style)
     "D212",   # Multi-line at start    (Allows text to follow triple quotes)
     "D400",   # First line period      (Allows short descriptive AI titles)
     "D415",   # First line punctuation (Allows short descriptive AI titles)
-    "TRY003", # Long exception message  (Allows detailed AI error logs)
+    "TRY003", # Long exception message (Allows detailed AI error logs)
 	"D100",   # Missing module docstring (Bypassed for rapid file creation)
     "D104",   # Missing public package docstring Bypassed for __init__.py files)
     "D417",   # Missing argument descriptions in the docstring (enables ONE-LINER)
@@ -93,10 +96,3 @@ no_implicit_optional = true             # Rejects None unless explicitly typed
 strict_equality = true                  # Forces compatible type comparisons
 warn_redundant_casts = true             # Flags unnecessary type conversions
 ignore_missing_imports = true           # Silences missing stub warnings
-
-[[tool.mypy.overrides]]                 # Library-specific type handling
-module = [                              # External modules without stubs
-    "requests.*",                       # Requests library
-    "pytest_jsonreport.*"               # JSON reporting plugin
-]
-ignore_missing_imports = true           # Silences stub errors for these paths

@@ -3,13 +3,20 @@
 # Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
-"""agent_core/router_core/llm.py - LLM infrastructure (v 1.9 Pydantic + Httpx)."""
+"""agent_core/router_core/llm.py - LLM infrastructure with Instructor support (v 1.16)."""
+
+from typing import TypeVar, cast
 
 import httpx
+import instructor
 import stamina
+from openai import OpenAI
 
 from .models import AgentProfile, EnvConfig, OrchestratorConfigModel
 from .utils import DEFAULT_MOCK_RESPONSES, count_tokens, log
+
+# Generic type for Pydantic models used by Instructor
+T = TypeVar("T")
 
 
 class TokenBudgetManager:
@@ -32,7 +39,7 @@ class TokenBudgetManager:
 
 
 class APIClient:
-    """Agnostic API client supporting multiple providers and key rotation."""
+    """Agnostic API client supporting text and structured outputs (via Instructor)."""
 
     def __init__(self, env: EnvConfig, mock: bool, config: OrchestratorConfigModel) -> None:
         self.env = env
@@ -40,7 +47,7 @@ class APIClient:
         self.config = config
 
     def _should_retry(self, exc: Exception) -> bool:
-        """Backoff hook: retry only on rate limits (429), server errors (50x), or network drops."""
+        """Backoff hook: retry only on rate limits, server errors, or network drops."""
         if isinstance(exc, httpx.HTTPStatusError):
             return exc.response.status_code == 429 or exc.response.status_code >= 500
         return isinstance(exc, httpx.RequestError)
@@ -53,7 +60,8 @@ class APIClient:
         keys_str: str,
         base_url: str | None,
         tid: str | None,
-    ) -> str:
+        response_model: type[T] | None = None,
+    ) -> str | T:
         """Iterate through comma-separated keys before failing the provider."""
         keys = [k.strip() for k in keys_str.split(",")] if keys_str else []
         if not keys:
@@ -62,14 +70,13 @@ class APIClient:
         last_error: Exception | None = None
         for key in keys:
             try:
-                return self._do_call(provider, profile, prompt, key, base_url)
+                return self._do_call(provider, profile, prompt, key, base_url, response_model)
             except Exception as e:
                 last_error = e
                 err_str = str(e)
-                # Rotate key if rate-limited or unauthorized AFTER stamina gives up
-                if "429" in err_str or "401" in err_str or "403" in err_str:
+                if any(err_code in err_str for err_code in ("429", "401", "403")):
                     log(
-                        f"Key for {provider} failed ({err_str}). Rotating to next key if available...",
+                        f"Key for {provider} failed ({err_str}). Rotating key...",
                         "WARN",
                         tid,
                     )
@@ -86,68 +93,54 @@ class APIClient:
         profile: AgentProfile,
         prompt: str,
         tid: str | None = None,
-    ) -> str:
-        """Entry point for calling an LLM provider with fallback logic."""
+        response_model: type[T] | None = None,
+    ) -> str | T:
+        """Entry point for calling an LLM provider. Supports structured output."""
         provider = profile.provider.upper()
 
-        # Dynamic credential lookup via Pydantic model
+        # Dynamic credential lookup
         creds = self.env.credentials.get(provider)
         keys_str = creds.api_key if creds else None
         base_url = creds.base_url if creds else None
 
-        # Special case for GitHub Token if not in dynamic credentials
         if not keys_str and provider == "GITHUB":
             keys_str = self.env.GITHUB_TOKEN
 
+        # Mocking handling
         if self.mock or not keys_str or "_CHANGE_ME" in keys_str:
             log(f"Mock response for: {agent}", "WARN", tid=tid)
-            return DEFAULT_MOCK_RESPONSES.get(agent, f"Mock response for {agent}")
+            mock_data = DEFAULT_MOCK_RESPONSES.get(agent, f"Mock response for {agent}")
+            return mock_data
+
+        # Mypy arg-type fix: Ensure keys_str is not None
+        if keys_str is None:
+            raise ValueError(f"Credentials for {provider} are not configured.")
 
         try:
-            return self._try_provider(provider, profile, prompt, keys_str, base_url, tid)
+            return self._try_provider(provider, profile, prompt, keys_str, base_url, tid, response_model)
         except Exception as e:
             resilience = self.config.resilience
-            use_fallback = resilience.smart_fallback.value
-            fallback_matrix = resilience.fallback_matrix
-
-            fallback_info = fallback_matrix.get(provider)
-
-            if use_fallback and fallback_info:
+            if resilience.smart_fallback.value and (fallback_info := resilience.fallback_matrix.get(provider)):
                 fb_provider = fallback_info.fallback_provider.upper()
-                fb_model = fallback_info.fallback_model
+                log(f"Primary {provider} failed. FALLBACK -> {fb_provider}.", "WARN", tid)
 
-                log(
-                    f"All keys for {provider} failed. TRIGGERING FALLBACK -> {fb_provider}.",
-                    "WARN",
-                    tid,
-                )
-
-                # Fallback lookup
                 fb_creds = self.env.credentials.get(fb_provider)
                 fb_keys_str = fb_creds.api_key if fb_creds else None
                 fb_base_url = fb_creds.base_url if fb_creds else None
 
-                if not fb_keys_str and fb_provider == "GITHUB":
-                    fb_keys_str = self.env.GITHUB_TOKEN
-
-                if not fb_keys_str or "_CHANGE_ME" in fb_keys_str:
-                    raise RuntimeError(f"Fallback key for {fb_provider} is missing from .env.") from e
+                if fb_keys_str is None:
+                    raise RuntimeError(f"Fallback credentials for {fb_provider} missing.") from e
 
                 fallback_profile = profile.model_copy()
                 fallback_profile.provider = fb_provider.lower()
-                fallback_profile.model = fb_model
+                fallback_profile.model = fallback_info.fallback_model
 
                 try:
                     return self._try_provider(
-                        fb_provider,
-                        fallback_profile,
-                        prompt,
-                        fb_keys_str,
-                        fb_base_url,
-                        tid,
+                        fb_provider, fallback_profile, prompt, fb_keys_str, fb_base_url, tid, response_model
                     )
                 except Exception as fb_e:
-                    raise RuntimeError(f"Primary API & Fallback API both failed. Final error: {fb_e}") from fb_e
+                    raise RuntimeError(f"Primary & Fallback failed. Error: {fb_e}") from fb_e
             else:
                 raise RuntimeError(f"API Error ({provider}): {e}") from e
 
@@ -158,32 +151,15 @@ class APIClient:
         prompt: str,
         key: str,
         base_url: str | None,
-    ) -> str:
-        """Universal execution using standard OpenAI schema with robust retries."""
+        response_model: type[T] | None = None,
+    ) -> str | T:
+        """Universal execution with robust retries and optional structured validation."""
         if not base_url:
             raise ValueError(f"Missing {provider}_BASE_URL in your .env file.")
 
-        if not base_url.startswith(("http://", "https://")):
-            raise ValueError(f"Security Error: Base URL for {provider} must start with http:// or https://")
-
-        payload = {
-            "model": p.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": p.max_tokens,
-            "temperature": p.temperature,
-        }
-
-        headers = {
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            "User-Agent": "Agent-CI-Lens/1.0",
-        }
-
         timeout_cfg = httpx.Timeout(
+            self.config.resilience.http_read_timeout.value,
             connect=self.config.resilience.http_connect_timeout.value,
-            read=self.config.resilience.http_read_timeout.value,
-            write=10.0,
-            pool=10.0,
         )
 
         attempts = self.config.resilience.retry_attempts.value
@@ -196,15 +172,30 @@ class APIClient:
             wait_max=30.0,
             wait_exp_base=backoff,
         ):
-            # Opravené vnorenie (SIM117) do jedného riadku
-            with attempt, httpx.Client(timeout=timeout_cfg) as client:
-                resp = client.post(base_url, json=payload, headers=headers)
-                resp.raise_for_status()
+            with attempt, httpx.Client(timeout=timeout_cfg) as http_client:
+                # Vždy inicializujeme natívneho OpenAI klienta
+                raw_client = OpenAI(api_key=key, base_url=base_url, http_client=http_client)
 
-                response_payload = resp.json()
-                return str(response_payload["choices"][0]["message"]["content"])
+                if response_model:
+                    # STRUCTURED MODE: Použijeme Instructor wrapper
+                    instructor_client = instructor.from_openai(raw_client)
+                    structured_resp = instructor_client.chat.completions.create(
+                        model=p.model,
+                        messages=[{"role": "user", "content": prompt}],
+                        response_model=response_model,
+                        temperature=p.temperature,
+                        max_tokens=p.max_tokens,
+                    )
+                    return cast(T, structured_resp)
+                # LEGACY MODE: Použijeme čistého OpenAI klienta (Instructor by tu spadol)
+                text_resp = raw_client.chat.completions.create(
+                    model=p.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=p.temperature,
+                    max_tokens=p.max_tokens,
+                )
+                return str(text_resp.choices[0].message.content)
 
-        # Opravený chýbajúci return (RET503) pre prípad, že cyklus skončí bez návratu
         raise RuntimeError(f"LLM API Call to {provider} failed exhaustively after {attempts} attempts.")
 
 
@@ -212,7 +203,6 @@ class PromptBuilder:
     """Constructs prompts for agents using bimetric context and RAG."""
 
     def build(self, agent: str, profile: AgentProfile, task: str, session: dict[str, str]) -> str:  # noqa: ARG002
-        # Load assets from Model 5.3 structure
         from .utils import ROOT
 
         persona_path = ROOT / f".agents/{agent}.md"
@@ -251,7 +241,7 @@ class PromptBuilder:
                     keyword, _, advice = block.partition("\n")
                     keyword = keyword.strip()
                     if keyword and keyword in system_feedback:
-                        relevant_solutions.append(f"- [{keyword}]: {advice.strip()}")
+                        relevant_solutions.append(f"-[{keyword}]: {advice.strip()}")
 
                 if relevant_solutions:
                     rag_section = (

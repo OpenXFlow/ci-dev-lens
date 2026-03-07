@@ -1,118 +1,109 @@
 {
-  "version": "1.3",
+  "version": "1.4",
   "workflow_global": {
     "ci_mode": {
       "value": "local",
-      "description": "Orchestration target. 'local' for standard development, 'github' for cloud verification stage."
+      "description": "Environment target. 'local' for development, 'github' for automated CI runs."
     },
     "loop_mode": {
       "value": true,
-      "description": "If true, the orchestrator automatically processes the next task after success. If false, it stops after one task."
+      "description": "If true, orchestrator automatically pulls the next GOAL from USER_QUEUE after completion."
     },
     "loop_delay_seconds": {
       "value": 5,
-      "description": "Delay in seconds between tasks when loop_mode is active to avoid API rate limits (e.g., HTTP 429 on Groq)."
+      "description": "Cooldown period between tasks to prevent LLM API rate-limiting (HTTP 429)."
     },
     "max_task_attempts": {
       "value": 3,
-      "description": "Master Circuit Breaker: Maximum retries for a single task across all workflow stages before HALT."
+      "description": "Master circuit breaker: Maximum allowed failures for a single task before HALT."
     },
     "max_continuous_tasks": {
       "value": 15,
-      "description": "Safety cap: Maximum number of different tasks processed in a single loop run."
+      "description": "Safety cap: Total number of sub-tasks the engine can process in one session."
     }
   },
   "workflow_local": {
     "ANALYSE": {
-      "active": { "value": true, "description": "Diagnostic & strategic phase before planning. Recommended for complex goals." },
-      "pause_after": { "value": false, "description": "If true, stops the pipeline after analysis for operator review. If false, continues to PLANNING." },
+      "active": { "value": false , "description": "Diagnostic phase: Agent assesses the codebase and requirements." },
       "max_retries": { "value": 3 }
     },
     "PLANNING": {
-      "active": { "value": true, "description": "Queen decomposes goals into atomic technical tasks in [AGENT_PROGRESS]." },
+      "active": { "value": true, "description": "Architectural phase: Goal is decomposed into atomic tasks in TASKS.md." },
       "max_retries": { "value": 3 }
     },
     "EXECUTING": {
-      "active": { "value": true, "description": "Developer implements code and tests. This is the main construction phase." },
+      "active": { "value": true, "description": "Implementation phase: Coding and initial unit test generation." },
       "max_retries": { "value": 3 }
     },
     "LINTING": {
-      "active": { "value": true, "description": "Pedant and automated scripts verify PEP8 and Type compliance." },
+      "active": { "value": false , "description": "Static analysis: Enforcing PEP8, type hints, and code cleanliness." },
       "max_retries": { "value": 5 }
     },
     "TESTING": {
-      "active": { "value": true, "description": "Developer executes the test suite to ensure logical correctness." },
+      "active": { "value": false , "description": "Logic verification: Running the pytest suite against the implementation." },
       "max_retries": { "value": 3 }
     },
     "VERIFYING": {
-      "active": { "value": true, "description": "Auditor performs final security and quality verification before completion." },
+      "active": { "value": false , "description": "Security & QA audit: Final check for secrets and quality patterns." },
       "max_retries": { "value": 3 }
     },
-    "GHA_PUSHING": {
-      "active": { "value": false, "description": "Automatically push the verified branch to origin (v2 Cloud Stage)." },
-      "max_retries": { "value": 1 }
+    "VCS_DELIVERY": {
+      "active": { "value": true , "description": "Final stage: Executes git operations and cloud integration based on vcs_control." },
+      "max_retries": { "value": 2 }
+    }
+  },
+  "vcs_control": {
+    "mode": {
+      "value": "github",
+      "description": "Delivery strategy: 'local_git' (commits only), 'local_act' (local GHA simulation), 'github' (full cloud flow)."
     },
-    "GHA_PR_OPENING": {
-      "active": { "value": false, "description": "Automatically open a Pull Request using GitHub CLI (v2 Cloud Stage)." },
-      "max_retries": { "value": 1 }
+    "github_settings": {
+      "auto_push": { "value": true, "description": "Push the feature branch to remote origin after verification." },
+      "auto_pr": { "value": true, "description": "Create a Pull Request automatically using the GitHub REST API." },
+      "watch_gha": { "value": false, "description": "Poll GitHub API for workflow run status before closing the GOAL." },
+      "gha_timeout_minutes": { "value": 10, "description": "Maximum time to wait for GitHub Actions to finish in the cloud." }
     },
-    "GHA_CLOUD_VERIFYING": {
-      "active": { "value": false, "description": "Wait and poll for GitHub Actions result in the cloud (v2 Cloud Stage)." },
-      "max_retries": { "value": 1 }
+    "local_git_settings": {
+      "auto_commit": { "value": true, "description": "Automatically perform a git commit after each successful TASK." },
+      "branch_per_goal": { "value": true, "description": "Create a dedicated feature branch for every high-level GOAL." }
+    },
+    "local_act_settings": {
+      "workflow_file": { "value": "ci.yml", "description": "The YAML file name in .github/workflows/ to be simulated by 'act'." },
+      "platform": { "value": "ubuntu-latest=catthehacker/ubuntu:act-22.04", "description": "Docker image mapping for local GHA simulation." }
     }
   },
   "resilience": {
     "smart_fallback": {
       "value": true,
-      "description": "If the primary API provider fails, automatically attempt fallback using the matrix."
+      "description": "Automatically switch to a backup LLM provider if the primary one fails."
     },
     "http_connect_timeout": {
       "value": 10.0,
-      "description": "Timeout in seconds to establish a network connection. Fails fast if the server is completely down."
+      "description": "Maximum time to establish a network connection (Fast-Fail)."
     },
     "http_read_timeout": {
       "value": 60.0,
-      "description": "Timeout in seconds to wait for LLM token generation to complete."
+      "description": "Maximum time to wait for a full LLM response (supports slow reasoning models)."
     },
     "retry_attempts": {
       "value": 3,
-      "description": "Maximum number of HTTP retries using stamina (handles 429 and 50x errors)."
+      "description": "Number of automatic retries using stamina for 429/5xx errors."
     },
     "retry_backoff_factor": {
       "value": 1.5,
-      "description": "Exponential backoff multiplier for stamina retry delays."
+      "description": "Exponential multiplier for wait times between retries."
     },
     "fallback_matrix": {
-      "GROQ": {
-        "fallback_provider": "MISTRAL",
-        "fallback_model": "mistral-large-latest",
-        "description": "If Groq (Developer/Pedant) fails or rate-limits, redirect to Mistral large model."
-      },
-      "MISTRAL": {
-        "fallback_provider": "GROQ",
-        "fallback_model": "llama-3.3-70b-versatile",
-        "description": "If Mistral (Queen/Auditor) fails, fallback to Groq using the robust Llama 70b."
-      }
+      "GROQ": { "fallback_provider": "MISTRAL", "fallback_model": "mistral-large-latest" },
+      "MISTRAL": { "fallback_provider": "GROQ", "fallback_model": "llama-3.3-70b-versatile" }
     }
   },
   "memory_management": {
-    "yellow_zone_threshold": {
-      "value": 0.7,
-      "description": "Context window usage percentage that triggers context-compressor skill."
-    },
-    "red_zone_threshold": {
-      "value": 0.9,
-      "description": "Context window usage percentage that triggers emergency HALT."
-    }
+    "yellow_zone_threshold": { "value": 0.7, "description": "Triggers ACTION_LOG compression at this context window percentage." },
+    "red_zone_threshold": { "value": 0.9, "description": "Emergency threshold: Activates HALT to prevent context overflow." }
   },
   "logging": {
-    "show_task_id": {
-      "value": true,
-      "description": "Include [TASK-XXX] prefix in every log line for better traceability."
-    },
-    "verbosity": {
-      "value": "INFO",
-      "description": "Terminal output detail level (DEBUG, INFO, WARN, ERROR)."
-    }
+    "show_task_id": { "value": true, "description": "Prefix every log line with [TASK-XXX] for traceability." },
+    "verbosity": { "value": "INFO", "description": "Log level filtering (DEBUG, INFO, WARN, ERROR)." }
   }
 }

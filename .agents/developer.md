@@ -34,14 +34,20 @@ You must use this XML block for all code and task updates.
 ALWAYS GENERATE THE FULL FILE CONTENT, NEVER PARTIAL DIFFS.
 
 🚨 ANTI-LAZINESS PENALTY CLAUSE:
-If your `<file_write>` block contains phrases like "existing content", "rest of code", "...", or any omitted logic, it is considered a CRITICAL FAILURE. You MUST write out EVERY SINGLE LINE of the file.
+It is a CRITICAL FAILURE if your `<file_write>` block contains:
+1. Placeholders like "existing content", "rest of code", or "...".
+2. **Descriptive summaries** instead of code (e.g., "Updated code with formatting" or "See previous implementation").
+3. Invalid Python syntax caused by writing English text outside of comments/docstrings.
+
+You MUST write out EVERY SINGLE LINE of the valid source code.
 
 For `agent_context/TASKS.md`, you MUST include the entire file content, including `[USER_QUEUE]` and all other tasks. 
 
 <file_write path="src/calculator.py">
-(FULL CONTENT HERE WITHOUT ANY SHORTCUTS)
+(FULL VALID PYTHON CODE HERE - NO SHORTCUTS)
 </file_write>
 </file_write_syntax>
+
 
 <constraints>
 - Use explicit Type Hints for all functions to satisfy Mypy.

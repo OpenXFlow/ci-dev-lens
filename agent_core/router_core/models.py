@@ -3,7 +3,7 @@
 # Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
-"""agent_core/router_core/models.py - Pydantic schemas for orchestrator configuration (v 1.4)."""
+"""agent_core/router_core/models.py - Pydantic schemas for orchestrator configuration (v 1.6)."""
 
 from typing import Any
 
@@ -11,71 +11,56 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # ==========================================
-# 1. DYNAMIC ENV CONFIGURATION (Smart Parser)
+# 1. DYNAMIC ENV CONFIGURATION
 # ==========================================
 class ProviderCredentials(BaseModel):
-    """Holds credentials for a specific provider (dynamic)."""
+    """Holds credentials for a specific provider."""
 
     api_key: str
     base_url: str | None = None
 
 
 class EnvConfig(BaseModel):
-    """Smart schema for environment variables.
+    """Smart schema for environment variables including GitHub secrets."""
 
-    Static fields: System control flags.
-    Dynamic fields: Any {NAME}_API_KEY is parsed into the credentials dictionary.
-    """
-
-    # Static System Controls
     CI_MODE: str = Field(default="local")
     MOCK: bool = Field(default=False)
     GHA_MOCK_RESULT: str = Field(default="success")
 
-    # Dynamic Credential Storage
-    # Structure: {"GROQ": {"api_key": "...", "base_url": "..."}, "OLLAMA": ...}  # noqa: ERA001
-    credentials: dict[str, ProviderCredentials] = Field(default_factory=dict)
-
-    # Standard Optional token for GitHub Actions
+    # GitHub Environment Specifics
+    GITHUB_REPOSITORY: str | None = None
     GITHUB_TOKEN: str | None = None
 
-    # Pydantic V2 Configuration: Ignore extra env vars we don't explicitly define
+    credentials: dict[str, ProviderCredentials] = Field(default_factory=dict)
     model_config = ConfigDict(extra="ignore")
 
     @model_validator(mode="before")
     @classmethod
     def parse_dynamic_providers(cls, data: Any) -> Any:  # noqa: ANN401
-        """Scans input data (dict from .env) for patterns ending in _API_KEY.
+        """Groups {NAME}_API_KEY patterns into credentials dict.
 
-        Groups them into the 'credentials' dictionary.
+        Note: ANN401 is ignored here as Pydantic 'before' validators
+        must handle raw input before type conversion.
         """
         if not isinstance(data, dict):
             return data
-
         credentials = {}
-
-        # Iterate over a copy of keys to avoid modification issues
         for key, value in data.items():
             if key.endswith("_API_KEY"):
-                provider_name = key.replace("_API_KEY", "").upper()
-                base_url_key = f"{provider_name}_BASE_URL"
-
-                # Create credential entry
-                credentials[provider_name] = {
+                p_name = key.replace("_API_KEY", "").upper()
+                credentials[p_name] = {
                     "api_key": value,
-                    "base_url": data.get(base_url_key),
+                    "base_url": data.get(f"{p_name}_BASE_URL"),
                 }
-
-        # Inject parsed credentials into the model data
         data["credentials"] = credentials
         return data
 
 
 # ==========================================
-# 2. AGENT REGISTRY SCHEMA (.agents/agent_registry.json)
+# 2. AGENT REGISTRY MODELS
 # ==========================================
 class AgentProfile(BaseModel):
-    """Schema for individual AI agent configurations."""
+    """Individual AI agent configurations."""
 
     role: str
     model: str
@@ -87,40 +72,77 @@ class AgentProfile(BaseModel):
 
 
 class AgentsRegistryModel(BaseModel):
-    """Schema for the entire agent registry file."""
+    """Full agent profile registry."""
 
     version: str
     profiles: dict[str, AgentProfile]
 
 
 # ==========================================
-# 3. ORCHESTRATOR CONFIG SCHEMA (agent_orchestrator.json)
+# 3. SETTING VALUE WRAPPERS
 # ==========================================
-# Generic wrapper for the {"value": X, "description": "..."} pattern
 class SettingValueStr(BaseModel):
-    """Configuration wrapper for string values."""
+    """Container for string settings with descriptions."""
 
     value: str
 
 
 class SettingValueBool(BaseModel):
-    """Configuration wrapper for boolean values."""
+    """Container for boolean settings with descriptions."""
 
     value: bool
 
 
 class SettingValueInt(BaseModel):
-    """Configuration wrapper for integer values."""
+    """Container for integer settings with descriptions."""
 
     value: int
 
 
 class SettingValueFloat(BaseModel):
-    """Configuration wrapper for float values."""
+    """Container for float settings with descriptions."""
 
     value: float
 
 
+# ==========================================
+# 4. VCS CONTROL MODELS
+# ==========================================
+class GitHubConfig(BaseModel):
+    """Specific settings for GitHub/Cloud flow."""
+
+    auto_push: SettingValueBool
+    auto_pr: SettingValueBool
+    watch_gha: SettingValueBool
+    gha_timeout_minutes: SettingValueInt
+
+
+class LocalGitConfig(BaseModel):
+    """Specific settings for local Git flow."""
+
+    auto_commit: SettingValueBool
+    branch_per_goal: SettingValueBool
+
+
+class ActConfig(BaseModel):
+    """Specific settings for 'act' (Local GHA Simulation)."""
+
+    workflow_file: SettingValueStr
+    platform: SettingValueStr
+
+
+class VCSControlConfig(BaseModel):
+    """Master VCS orchestration settings."""
+
+    mode: SettingValueStr
+    github_settings: GitHubConfig
+    local_git_settings: LocalGitConfig
+    local_act_settings: ActConfig
+
+
+# ==========================================
+# 5. MASTER CONFIGURATION SCHEMA
+# ==========================================
 class WorkflowGlobal(BaseModel):
     """Global workflow settings."""
 
@@ -132,7 +154,7 @@ class WorkflowGlobal(BaseModel):
 
 
 class StageConfig(BaseModel):
-    """Configuration for individual workflow stages (e.g., ANALYSE, PLANNING)."""
+    """Configuration for individual workflow stages."""
 
     active: SettingValueBool
     max_retries: SettingValueInt
@@ -140,7 +162,7 @@ class StageConfig(BaseModel):
 
 
 class FallbackMatrixEntry(BaseModel):
-    """Fallback strategy for API failures."""
+    """API Fallback strategy."""
 
     fallback_provider: str
     fallback_model: str
@@ -159,7 +181,7 @@ class ResilienceConfig(BaseModel):
 
 
 class MemoryManagementConfig(BaseModel):
-    """Context window memory management."""
+    """Context window management."""
 
     yellow_zone_threshold: SettingValueFloat
     red_zone_threshold: SettingValueFloat
@@ -173,11 +195,12 @@ class LoggingConfig(BaseModel):
 
 
 class OrchestratorConfigModel(BaseModel):
-    """Master schema for the agent_orchestrator.json file."""
+    """The master schema for agent_orchestrator.json."""
 
     version: str
     workflow_global: WorkflowGlobal
     workflow_local: dict[str, StageConfig]
+    vcs_control: VCSControlConfig
     resilience: ResilienceConfig
     memory_management: MemoryManagementConfig
     logging: LoggingConfig
