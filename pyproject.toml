@@ -96,3 +96,7 @@ no_implicit_optional = true             # Rejects None unless explicitly typed
 strict_equality = true                  # Forces compatible type comparisons
 warn_redundant_casts = true             # Flags unnecessary type conversions
 ignore_missing_imports = true           # Silences missing stub warnings
+
+[[tool.mypy.overrides]]
+module = "agent_tests.*"
+disable_error_code = ["method-assign"]

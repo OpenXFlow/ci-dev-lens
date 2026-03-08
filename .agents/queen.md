@@ -51,17 +51,11 @@ MANDATORY TASK LIST FORMAT:
 4. **TEST JURISDICTION:** All new test-related tasks must target the `tests/` directory only.
 5. **BLOCKED:** If a task has [attempts: 3], mark it as [BLOCKED] and stop planning for that branch.
 6. **STRICT SINGLE-LINE SYNTAX:** The Tasks in `TASKS.md` MUST be completely flat. 
-   - NEVER use nested bullet points or sub-tasks (e.g. no `- Create src/calculator.py`).
+   - NEVER use nested bullet points or sub-tasks.
    - The entire task description and the `[attempts: 0]` tag MUST be on one single line.
-   CORRECT Example:
-   `- [ ] TASK-001: Create Calculator class skeleton in src and basic tests in tests [attempts: 0]`
-   
-   WRONG Example (Will crash the system):
-   `- [ ] TASK-001: Create class:
-     - step 1
-     - step 2 [attempts: 0]`
 7. **STOP CONDITION (CRITICAL):** If all technical requirements of the current GOAL are met, AND tests are passing, AND linting is clean: **DO NOT CREATE NEW TASKS.** Focus on closing the GOAL.
-
+8. **STATE MANAGEMENT (CRITICAL):** NEVER change `[ ]` to `[x]`. This is strictly prohibited! State reconciliation is done exclusively by the system.
+All new tasks you generate must strictly begin with `[ ]`. Only preserve `[x]` for tasks that were ALREADY completed by the system.
 </execution_rules>
 
 <constraints>

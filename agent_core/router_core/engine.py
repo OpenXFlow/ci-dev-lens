@@ -5,7 +5,7 @@
 
 """
 agent_core/router_core/engine.py
-Hybrid Orchestration Engine (v 1.18 Linter-Perfect & State-Sync).
+Hybrid Orchestration Engine (v 1.25 VCS Master Kill-Switch).
 """
 
 import re
@@ -36,7 +36,6 @@ from .utils import (
 class Router:
     """Hybrid State Machine supporting both Structured and Legacy AI interactions."""
 
-    # Map agents to their expected Pydantic response models (Instructor)
     RESPONSE_MODELS: ClassVar[dict[str, type[Any]]] = {
         "queen": QueenResponse,
         "auditor": AuditorResponse,
@@ -56,9 +55,7 @@ class Router:
         self.builder = PromptBuilder()
         self.git = GitLocalManager()
 
-    def _apply_file_writes(
-        self, writes: list[FileWrite], tid: str | None = None
-    ) -> int:
+    def _apply_file_writes(self, writes: list[FileWrite], tid: str | None = None) -> int:
         """Physically commits file changes to disk with security checks."""
         count = 0
         protected = [
@@ -79,13 +76,20 @@ class Router:
                 existing_ids = self.tasks.get_all_task_ids()
                 new_ids = set(re.findall(r"TASK-(\d+)", content))
                 if existing_ids - new_ids:
-                    log(
-                        f"History Violation: Queen tried to delete tasks "
-                        f"{existing_ids - new_ids}",
-                        "ERROR",
-                        tid,
-                    )
+                    log(f"History Violation: Queen tried to delete tasks {existing_ids - new_ids}", "ERROR", tid)
                     continue
+
+                # ARCHITECT SHIELD: Prevent premature completion
+                if tid and not str(tid).startswith("GOAL-"):
+                    pattern = re.compile(rf"-\s*\[\s*x\s*\]\s*TASK-{tid}\b", re.IGNORECASE)
+                    if pattern.search(content):
+                        content = pattern.sub(f"-[ ] TASK-{tid}", content)
+                        w.content = content
+                        log(
+                            f"Sanitized TASKS.md: Prevented agent from prematurely marking TASK-{tid} as [x]",
+                            "WARN",
+                            tid,
+                        )
 
             dest = ROOT / w.path
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -94,42 +98,32 @@ class Router:
             count += 1
         return count
 
-    def _apply_skill_calls(
-        self, calls: list[SkillCall], tid: str | None = None
-    ) -> list[str]:
+    def _apply_skill_calls(self, calls: list[SkillCall], tid: str | None = None) -> list[str]:
         """Executes a batch of skills and returns their status tags."""
         results = []
         for c in calls:
             tag, out = self._run_skill_process(c.name, c.arguments, tid)
-            self.session.write_action_log(
-                f"Skill {c.name} -> {tag}\nOutput: {out[:250]}..."
-            )
+            self.session.write_action_log(f"Skill {c.name} -> {tag}\nOutput: {out[:250]}...")
             results.append(tag)
 
             if "RESULT:SECRET_FOUND" in tag:
                 self.halt.halt(f"Secret detected during skill {c.name}!", tid)
         return results
 
-    def _run_skill_process(
-        self, name: str, args: dict[str, str], tid: str | None = None
-    ) -> tuple[str, str]:
+    def _run_skill_process(self, name: str, args: dict[str, str], tid: str | None = None) -> tuple[str, str]:
         """Low-level skill execution via subprocess."""
         s_map = {
             "testing-pro": ".claude/skills/testing-pro/scripts/verify.py",
             "quality-gate": ".claude/skills/quality-gate/scripts/check.sh",
-            "security-guard": (".claude/skills/security-guard/scripts/scan.py"),
-            "context-compressor": (
-                ".claude/skills/context-compressor/scripts/summarize.py"
-            ),
+            "security-guard": ".claude/skills/security-guard/scripts/scan.py",
+            "context-compressor": ".claude/skills/context-compressor/scripts/summarize.py",
         }
         rel_path = s_map.get(name)
         if not rel_path:
             return "RESULT:ERROR", f"Skill {name} unknown"
 
-        from .utils import UV_PATH
-
         cmd = (
-            [UV_PATH, "run", "python", str(ROOT / rel_path)]
+            ["uv", "run", "python", str(ROOT / rel_path)]
             if rel_path.endswith(".py")
             else ["bash", str(ROOT / rel_path)]
         )
@@ -140,30 +134,17 @@ class Router:
         log(f"Spawning subprocess for skill: {name}", "INFO", tid)
 
         try:
-            res = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=ROOT, check=False
-            )
+            res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, check=False)
         except Exception as e:
             return f"RESULT:ERROR:{e}", str(e)
         else:
             output = res.stdout + "\n" + res.stderr
             tag = next(
-                (
-                    line.strip()
-                    for line in reversed(output.splitlines())
-                    if "RESULT:" in line
-                ),
-                "RESULT:COMPLETED",
+                (line.strip() for line in reversed(output.splitlines()) if "RESULT:" in line), "RESULT:COMPLETED"
             )
             return tag, output
 
-    def run_agent(
-        self,
-        agent_name: str,
-        task_desc: str,
-        current_state: str,
-        tid: str | None = None,
-    ) -> dict[str, Any]:
+    def run_agent(self, agent_name: str, task_desc: str, current_state: str, tid: str | None = None) -> dict[str, Any]:
         """Invokes an agent using either Structured (Instructor) or Legacy mode."""
         if self.halt.is_halted():
             return {"error": "HALTED"}
@@ -175,17 +156,10 @@ class Router:
         prompt = self.builder.build(agent_name, profile, task_desc, session_data)
 
         response_model = self.RESPONSE_MODELS.get(agent_name)
-        log(
-            f"Calling {agent_name} (Mode: "
-            f"{'Structured' if response_model else 'Legacy XML'})",
-            "INFO",
-            tid,
-        )
+        log(f"Calling {agent_name} (Mode: {'Structured' if response_model else 'Legacy XML'})", "INFO", tid)
 
         try:
-            ai_resp = self.api.call(
-                agent_name, profile, prompt, tid, response_model=response_model
-            )
+            ai_resp = self.api.call(agent_name, profile, prompt, tid, response_model=response_model)
         except Exception as e:
             self.halt.halt(f"Critical API Failure - {e}", tid=tid)
             return {"error": "API_SYSTEM_ERROR"}
@@ -196,42 +170,24 @@ class Router:
             if response_model and not isinstance(ai_resp, str):
                 match ai_resp:
                     case QueenResponse(updated_tasks=tasks):
-                        # MAINTENANCE FIX: Robust reconstruction of TASKS.md
                         original_content = self.tasks.path.read_text(encoding="utf-8")
-
                         user_match = re.search(r"(?s)^(.*?)\n---\n", original_content)
                         if not user_match:
-                            user_match = re.search(
-                                r"(?s)^(.*?)## \[AGENT_PROGRESS\]", original_content
-                            )
+                            user_match = re.search(r"(?s)^(.*?)## \[AGENT_PROGRESS\]", original_content)
 
-                        user_section = (
-                            user_match.group(1).strip()
-                            if user_match
-                            else original_content.strip()
-                        )
+                        user_section = user_match.group(1).strip() if user_match else original_content.strip()
 
                         md_lines = [user_section, "", "---", "", "## [AGENT_PROGRESS]"]
                         for t in tasks:
                             icon = "[x]" if t.status == "completed" else "[ ]"
-                            md_lines.append(
-                                f"- {icon} TASK-{t.id}: {t.description.strip()} "
-                                f"[attempts: {t.attempts}]"
-                            )
+                            md_lines.append(f"- {icon} TASK-{t.id}: {t.description.strip()} [attempts: {t.attempts}]")
 
-                        writes.append(
-                            FileWrite(
-                                path="agent_context/TASKS.md",
-                                content="\n".join(md_lines) + "\n",
-                            )
-                        )
+                        writes.append(FileWrite(path="agent_context/TASKS.md", content="\n".join(md_lines) + "\n"))
 
                         if tid and tid.startswith("GOAL-"):
                             fb = self.session.read().get("FEEDBACK", "")
                             if f"PLANNED:{tid}" not in fb:
-                                self.session.write_feedback(
-                                    f"{fb}\nPLANNED:{tid}".strip()
-                                )
+                                self.session.write_feedback(f"{fb}\nPLANNED:{tid}".strip())
 
                     case DeveloperResponse(files=f, skills=s):
                         writes.extend(f)
@@ -246,24 +202,12 @@ class Router:
                 for m in re.finditer(pattern, str(ai_resp), re.DOTALL):
                     content = m.group(2).strip()
                     if content.startswith("```"):
-                        content = re.sub(
-                            r"^```[a-z]*\n|```$",
-                            "",
-                            content,
-                            flags=re.MULTILINE,
-                        )
+                        content = re.sub(r"^```[a-z]*\n|```$", "", content, flags=re.MULTILINE)
                     writes.append(FileWrite(path=m.group(1), content=content + "\n"))
 
-                for m in re.finditer(
-                    r"<<<SKILL:([^|>]+)(?:\|([^>]*))?>>>", str(ai_resp)
-                ):
+                for m in re.finditer(r"<<<SKILL:([^|>]+)(?:\|([^>]*))?>>>", str(ai_resp)):
                     raw_args = (m.group(2) or "").split("|")
-                    args = {
-                        k.strip(): v.strip()
-                        for a in raw_args
-                        if ":" in a
-                        for k, _, v in [a.partition(":")]
-                    }
+                    args = {k.strip(): v.strip() for a in raw_args if ":" in a for k, _, v in [a.partition(":")]}
                     skills.append(SkillCall(name=m.group(1), arguments=args))
 
                 if agent_name == "queen" and tid and tid.startswith("GOAL-"):
@@ -291,8 +235,10 @@ class Router:
         cfg = self.orch_config.vcs_control
         log(f"📦 VCS Delivery (Mode: {cfg.mode.value})", "PIPELINE", tid)
 
+        # Branch is aligned strictly with the Active GOAL
         is_branch_per_goal = cfg.local_git_settings.branch_per_goal.value
-        branch = f"feat/{tid}" if is_branch_per_goal else "main"
+        active_goal = self.tasks.get_current_goal_id()
+        branch = f"feat/{active_goal}" if is_branch_per_goal and active_goal else "main"
 
         self.git.ensure_branch(branch)
 
@@ -309,10 +255,16 @@ class Router:
                         self.git.push()
 
                     if cfg.github_settings.auto_pr.value:
-                        pr = gh.create_pull_request(
-                            branch, f"PROPOSAL: {tid}", "Automated PR."
-                        )
-                        log(f"PR Created: {pr.html_url}", "OK", tid)
+                        try:
+                            # PR name uses the active goal for consistency
+                            pr_name = active_goal if active_goal else tid
+                            pr = gh.create_pull_request(branch, f"PROPOSAL: GOAL-{pr_name}", "Automated PR.")
+                            log(f"PR Created: {pr.html_url}", "OK", tid)
+                        except Exception as pr_err:
+                            if "422" in str(pr_err):
+                                log("PR already exists, continuing to polling...", "INFO", tid)
+                            else:
+                                raise
 
                     delivery_success = True
                     if cfg.github_settings.watch_gha.value:
@@ -329,6 +281,11 @@ class Router:
 
     def _sync_vcs_state(self, tid: str) -> None:
         """Helper to sync orchestration meta-state (TASKS.md, SESSION.md) to Git."""
+        # ARCHITECT FIX: Master Kill-Switch check for State-Sync
+        vcs_stage_cfg = self.orch_config.workflow_local.get("VCS_DELIVERY")
+        if not vcs_stage_cfg or not vcs_stage_cfg.active.value:
+            return
+
         vcs_cfg = self.orch_config.vcs_control
         if vcs_cfg.mode.value in {"local_git", "github"} and self.git.is_dirty():
             self.git.commit_all(f"chore(state): sync meta-state for {tid}")
@@ -345,7 +302,7 @@ class Router:
                     log(f"Failed to push meta-state: {e}", "WARN", tid)
 
     def run_pipeline(self) -> None:
-        """Main autonomous loop with refined state management."""
+        """Main autonomous loop with refined semantic state management."""
         log("Pipeline Started", "PIPELINE")
         wf = self.orch_config.workflow_global
         local_wf = self.orch_config.workflow_local
@@ -359,25 +316,29 @@ class Router:
             tid = str(task["id"])
             log(f"Processing {tid}", "PIPELINE", tid)
 
+            # =================================================================
+            # ARCHITECT UPDATE: Eager Branching with Master Kill-Switch Check
+            # =================================================================
+            vcs_stage_cfg = local_wf.get("VCS_DELIVERY")
+            is_vcs_enabled = vcs_stage_cfg and vcs_stage_cfg.active.value
+
+            if is_vcs_enabled:
+                vcs_cfg = self.orch_config.vcs_control
+                if vcs_cfg.mode.value in {"local_git", "github"} and vcs_cfg.local_git_settings.branch_per_goal.value:
+                    active_goal = self.tasks.get_current_goal_id()
+                    if active_goal:
+                        self.git.ensure_branch(f"feat/{active_goal}")
+            # =================================================================
+
             if task.get("is_synthetic"):
                 fb = self.session.read().get("FEEDBACK", "")
-                if f"PLANNED:{tid}" in fb:
-                    content = self.tasks.path.read_text(encoding="utf-8")
-                    agent_part = content.partition("## [AGENT_PROGRESS]")[-1]
-
-                    # MAINTENANCE FIX: Count checked tasks with space "- [x]"
-                    total_tasks = agent_part.count("- [")
-                    completed_tasks = agent_part.count("- [x]")
-
-                    if total_tasks > 0 and total_tasks == completed_tasks:
-                        gid = tid.replace("GOAL-", "")
-                        self.tasks.mark_goal_completed(gid)
-                        log(f"Auto-closed {tid}", "OK", tid)
-                        self.session.write_state("IDLE", tid)
-
-                        # ARCHITECT FIX: Ensure final state is synced before exiting loop
-                        self._sync_vcs_state(tid)
-                        continue
+                if f"PLANNED:{tid}" in fb and self.tasks.are_all_tasks_completed():
+                    gid = tid.replace("GOAL-", "")
+                    self.tasks.mark_goal_completed(gid)
+                    log(f"Auto-closed {tid}", "OK", tid)
+                    self.session.write_state("IDLE", tid)
+                    self._sync_vcs_state(tid)
+                    continue
 
             stages = [
                 ("ANALYSE", "queen"),
@@ -417,43 +378,34 @@ class Router:
                         success = "error" not in res
 
                 if not success:
-                    if res.get("error") in {
-                        "API_SYSTEM_ERROR",
-                        "SECURITY_HALT",
-                        "HALTED",
-                    }:
+                    if res.get("error") in {"API_SYSTEM_ERROR", "SECURITY_HALT", "HALTED"}:
                         self.session.write_state("BLOCKED", tid)
+                        self._sync_vcs_state(tid)
                         return
 
                     current_attempts = action_log.count(f"STAGE_FAIL:{state}:{tid}") + 1
                     max_retries = conf.max_retries.value
-                    log(
-                        f"Stage {state} failed ({current_attempts}/{max_retries})",
-                        "WARN",
-                        tid,
-                    )
+                    log(f"Stage {state} failed ({current_attempts}/{max_retries})", "WARN", tid)
                     self.session.write_action_log(f"STAGE_FAIL:{state}:{tid}")
 
                     if current_attempts < max_retries:
                         err_msg = res.get("error")
-                        self.session.write_feedback(
-                            f"LAST_ERROR in {state} for {tid}: {err_msg}"
-                        )
-                        if state in {"LINTING", "TESTING", "VERIFYING"}:
+                        self.session.write_feedback(f"LAST_ERROR in {state} for {tid}: {err_msg}")
+
+                        if state in {"LINTING", "TESTING", "VERIFYING", "VCS_DELIVERY"}:
                             s = self.session.read()
                             action_log_curr = s.get("ACTION_LOG", "")
-                            # Optimization: Shorten replacement logic for Ruff E501
                             old_tag = f"STAGE_SUCCESS:EXECUTING:{tid}"
                             new_tag = f"REVERTED:EXECUTING:{tid}"
                             s["ACTION_LOG"] = action_log_curr.replace(old_tag, new_tag)
                             self.session._write_all(s)
+
                         task_success = False
                         break
 
-                    self.tasks.increment_attempts(
-                        tid, str(res.get("error", "Max retries"))
-                    )
+                    self.tasks.increment_attempts(tid, str(res.get("error", "Max retries")))
                     self.session.write_state("BLOCKED", tid)
+                    self._sync_vcs_state(tid)
                     return
 
                 self.session.write_action_log(f"STAGE_SUCCESS:{state}:{tid}")
@@ -464,9 +416,11 @@ class Router:
                 self.session.write_state("IDLE", tid)
                 log(f"Task {tid} Finished", "OK", tid)
 
-                # Call the extracted state-sync helper
-                self._sync_vcs_state(tid)
+            self._sync_vcs_state(tid)
 
+            if task_success:
                 if not wf.loop_mode.value:
                     break
+                time.sleep(wf.loop_delay_seconds.value)
+            else:
                 time.sleep(wf.loop_delay_seconds.value)

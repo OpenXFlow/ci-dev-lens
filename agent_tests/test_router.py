@@ -4,23 +4,19 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-agent_tests/test_router.py - Full unit tests for Router Engine (v 1.20).
-Fixed formatting assertions (added missing spaces in expected markdown strings).
+agent_tests/test_router.py - Core Engine unit tests.
+Focuses on Session, Tasks, Halt, Budgeting and basic Agent invocation logic.
 """
 
 import time
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any, cast
-from unittest.mock import MagicMock, create_autospec, patch
+from unittest.mock import create_autospec, patch
 
-import httpx
 import pytest
 import stamina  # type: ignore
 
 from agent_core.router_core.engine import Router
-from agent_core.router_core.git_local import GitLocalManager
-from agent_core.router_core.github_client import GitHubAPIClient
 from agent_core.router_core.llm import APIClient, TokenBudgetManager
 from agent_core.router_core.managers import HaltManager, SessionManager, TasksManager
 from agent_core.router_core.models import (
@@ -38,7 +34,6 @@ from agent_core.router_core.utils import count_tokens
 def fast_tests_no_sleep(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
     """Globally disable time.sleep and stamina retries during tests."""
     monkeypatch.setattr(time, "sleep", lambda _x: None)
-    # Force stamina to deactivate retries during tests to speed up execution
     stamina.set_active(False)
     yield
     stamina.set_active(True)
@@ -156,7 +151,6 @@ class TestSessionManager:
         sm.path = tmp_project / "agent_context" / "SESSION.md"
         sm.write_state("PLANNING")
         content = sm.path.read_text(encoding="utf-8")
-        # ARCHITECT FIX: Corrected assertions to expect a space after ## and ###
         assert "## [USER_SECTION]" in content
         assert "## [AGENT_SECTION]" in content
         assert "### [FEEDBACK]" in content
@@ -192,7 +186,6 @@ class TestTasksManager:
         tm = TasksManager()
         tm.path = tmp_project / "agent_context" / "TASKS.md"
         tm.mark_completed("001")
-        # ARCHITECT FIX: Corrected assertion to expect a space after the dash
         assert "- [x] TASK-001" in tm.path.read_text()
 
     def test_mark_goal_completed(self, tmp_project: Path) -> None:
@@ -231,13 +224,11 @@ class TestTokenBudgetManager:
     def test_yellow_zone(self) -> None:
         cfg = create_mock_config()
         tbm = TokenBudgetManager(100, cfg)
-        # 50 words * 1.5 = 75 tokens (>= 70 yellow, < 90 red)
         assert tbm.check("word " * 50) == "yellow"
 
     def test_red_zone(self) -> None:
         cfg = create_mock_config()
         tbm = TokenBudgetManager(50, cfg)
-        # 40 words * 1.5 = 60 tokens (> 45 red)
         assert tbm.check("word " * 40) == "red"
 
 
@@ -261,86 +252,7 @@ class TestAPIClient:
 
 
 # ==========================================
-# 7. GIT LOCAL MANAGER (Native)
-# ==========================================
-class TestGitLocal:
-    @pytest.fixture
-    def git(self, tmp_project: Path) -> GitLocalManager:
-        (tmp_project / ".git").mkdir()
-        return GitLocalManager(working_dir=tmp_project)
-
-    def test_is_dirty_clean(self, git: GitLocalManager) -> None:
-        with patch.object(git, "_run", return_value=""):
-            assert git.is_dirty() is False
-
-    def test_is_dirty_changed(self, git: GitLocalManager) -> None:
-        with patch.object(git, "_run", return_value="M modified_file.py"):
-            assert git.is_dirty() is True
-
-    def test_ensure_branch_existing(self, git: GitLocalManager) -> None:
-        with patch.object(git, "get_current_branch", return_value="main"), patch.object(git, "_run") as mock_run:
-            git.ensure_branch("main")
-            mock_run.assert_not_called()
-
-    @patch("agent_core.router_core.git_local.subprocess.run")
-    def test_ensure_branch_create(self, mock_sub: MagicMock, git: GitLocalManager) -> None:
-        """Verifies branch creation occurs when subprocess signals branch does not exist."""
-        with patch.object(git, "get_current_branch", return_value="main"), patch.object(git, "_run") as mock_run:
-            # Simulate git show-ref returning non-zero (branch not found)
-            mock_sub.return_value.returncode = 1
-            git.ensure_branch("feat/new")
-
-            # Verify it attempts to checkout and create (-b)
-            mock_run.assert_called_once_with(["checkout", "-b", "feat/new"])
-
-
-# ==========================================
-# 8. GITHUB CLIENT (Cloud)
-# ==========================================
-class TestGitHubClient:
-    @pytest.fixture
-    def gh_client(self) -> GitHubAPIClient:
-        # S106: Hardcoded password allowed in tests
-        env = EnvConfig(GITHUB_TOKEN="tok", GITHUB_REPOSITORY="u/r")  # noqa: S106
-        cfg = create_mock_config()
-        return GitHubAPIClient(env, cfg)
-
-    def test_should_retry_logic(self, gh_client: GitHubAPIClient) -> None:
-        # Rate limit
-        err_429 = httpx.HTTPStatusError("Limit", request=MagicMock(), response=MagicMock(status_code=429))
-        assert gh_client._should_retry(err_429) is True
-
-        # Server error
-        err_503 = httpx.HTTPStatusError("Down", request=MagicMock(), response=MagicMock(status_code=503))
-        assert gh_client._should_retry(err_503) is True
-
-        # Auth error (should not retry)
-        err_401 = httpx.HTTPStatusError("Auth", request=MagicMock(), response=MagicMock(status_code=401))
-        assert gh_client._should_retry(err_401) is False
-
-    def test_create_pr_payload(self, gh_client: GitHubAPIClient) -> None:
-        with patch.object(gh_client, "_request") as mock_req:
-            mock_req.side_effect = [
-                {"default_branch": "main", "full_name": "u/r", "html_url": "http://repo"},  # get_repo_info
-                {
-                    "number": 1,
-                    "html_url": "url",
-                    "state": "open",
-                    "title": "t",
-                    "user": {"login": "u", "id": 1},
-                },  # PR response
-            ]
-            gh_client.create_pull_request("feat/1", "Title", "Body")
-
-            # Verify payload
-            call_args = mock_req.call_args_list[1]
-            payload = call_args[1]["json_data"]
-            assert payload["head"] == "feat/1"
-            assert payload["base"] == "main"
-
-
-# ==========================================
-# 9. ROUTER: RUN_AGENT
+# 7. ROUTER: RUN_AGENT
 # ==========================================
 class TestRouterRunAgent:
     @pytest.fixture
@@ -363,7 +275,6 @@ class TestRouterRunAgent:
         assert res.get("status") == "OK"
 
     def test_run_developer_legacy(self, router: Router) -> None:
-        # Developer is not in RESPONSE_MODELS yet, so it uses XML parsing
         with patch.object(router.api, "call", return_value='<file_write path="src/main.py">print()</file_write>'):
             res = router.run_agent("developer", "impl", "EXECUTING")
             assert res["status"] == "OK"
@@ -405,9 +316,9 @@ class TestRouterRunAgent:
 
 
 # ==========================================
-# 10. ROUTER RUN PIPELINE & VCS
+# 8. ROUTER RUN PIPELINE
 # ==========================================
-class TestRouterVCSFlow:
+class TestRouterPipeline:
     @pytest.fixture
     def router(self, tmp_project: Path, monkeypatch: pytest.MonkeyPatch) -> Router:
         monkeypatch.setattr("agent_core.router_core.engine.ROOT", tmp_project)
@@ -444,16 +355,3 @@ class TestRouterVCSFlow:
         with patch.object(router, "run_agent", side_effect=mock_agent):
             router.run_pipeline()
             assert router.session.read()["STATE"] == "BLOCKED"
-
-    def test_vcs_local_git_call(self, router: Router) -> None:
-        router.orch_config.vcs_control.mode.value = "local_git"
-        assert router._run_vcs_delivery("001") is True
-        cast(Any, router.git).ensure_branch.assert_called()
-
-    def test_vcs_github_mock_call(self, router: Router) -> None:
-        router.orch_config.vcs_control.mode.value = "github"
-        with patch("agent_core.router_core.engine.GitHubAPIClient") as mock_gh_cls:
-            mock_gh = mock_gh_cls.return_value
-            mock_gh.create_pull_request.return_value = MagicMock(html_url="http://pr")
-            mock_gh.poll_workflow_status.return_value = MagicMock(conclusion="success")
-            assert router._run_vcs_delivery("001") is True

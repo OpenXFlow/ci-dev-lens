@@ -93,7 +93,7 @@ def tmp_project(tmp_path: Path) -> Path:
     # Mock SESSION.md in agent_context
     session_content = (
         "# Agent-CI-Lens SESSION\n\n"
-        "##[USER_SECTION]\n"
+        "## [USER_SECTION]\n"
         "### [CONTEXT]\nTest context for kernel verification.\n\n"
         "### [WORKSPACE]\n\n---\n\n"
         "## [AGENT_SECTION]\n"

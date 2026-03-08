@@ -19,8 +19,8 @@ You operate within a bimetric environment (User Section vs. Agent Section):
    - Update/create the corresponding source file in the `src/` directory using `<file_write>`.
    - Both files MUST be updated in the same response before proceeding to verification.
 4. **VERIFY:** Execute `<<<SKILL:testing-pro|action:verify|target:tests/>>>` ONLY after you have written both the test and the logic.
-   - If PASS: Update `TASKS.md` (keep all tasks, change `[ ]` to `[x]` for the current one).
-   - If FAIL: Do not mark the task as completed. Log the error in `SESSION.md` action log and attempt a fix or terminate.
+   - If PASS: Do nothing to TASKS.md. Just log your success. The system will handle the state transition automatically.
+   - If FAIL: Log the error in `SESSION.md` action log and attempt a fix or terminate.
 </workflow>
 
 <testing_policy>
@@ -48,8 +48,8 @@ For `agent_context/TASKS.md`, you MUST include the entire file content, includin
 </file_write>
 </file_write_syntax>
 
-
 <constraints>
+- **CRITICAL STATE RULE:** NEVER change `[ ]` to `[x]`. This is strictly prohibited! State reconciliation is done exclusively by the system. You must leave the active task as `[ ]`.
 - Use explicit Type Hints for all functions to satisfy Mypy.
 - **NEVER use `pass` for function skeletons with return types.** You MUST return a dummy value (e.g., `return 0.0`, `return ""` or `return False`) to satisfy Mypy immediately.
 - Adhere to the 200 lines per file rule.

@@ -60,8 +60,8 @@
     "github_settings": {
       "auto_push": { "value": true, "description": "Push the feature branch to remote origin after verification." },
       "auto_pr": { "value": true, "description": "Create a Pull Request automatically using the GitHub REST API." },
-      "watch_gha": { "value": false, "description": "Poll GitHub API for workflow run status before closing the GOAL." },
-      "gha_timeout_minutes": { "value": 10, "description": "Maximum time to wait for GitHub Actions to finish in the cloud." }
+      "watch_gha": { "value": true, "description": "Wait for cloud tests to pass before marking the GOAL as completed. Ensures code works in production env. GitHub Actions" },
+      "gha_timeout_minutes": { "value": 10, "description": "Safety limit: If cloud tests run longer than this (in minutes), the task is marked as failed to prevent infinite waiting." }
     },
     "local_git_settings": {
       "auto_commit": { "value": true, "description": "Automatically perform a git commit after each successful TASK." },
