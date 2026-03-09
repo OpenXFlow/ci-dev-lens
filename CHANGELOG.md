@@ -1,57 +1,43 @@
 # Changelog
 
-All notable changes to the Agent-CI-Lens project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
-
-## [Model 5.3.0] - 2026-02-28
+## [Model 6.0.0] - 2026-03-09
 ### Added
-- **Licensing:** MIT License headers added to all source files and a dedicated `LICENSE.md` in root.
-- **Networking Hardening:** Implemented `loop_delay_seconds` for rate-limit protection and smart provider fallback (Groq -> Mistral).
-- **Agent Pragmatism:** Introduced "Completion over Perfection" and explicit STOP CONDITION for the Queen agent to prevent redundant task generation.
-
-### Changed
-- **Linter Optimization:** Strict Ruff rules (ANN, TRY, PERF) enabled. Configured pragmatic docstyle ignores (D100, D104, D417) to prevent AI "Docstring Loops".
-- **Truth Hierarchy:** Updated `MEMORY.md` to serve as the primary source of truth for agent reasoning over long-term goals.
-- **Validation Shield:** Enhanced `validator.py` with deep Pydantic schema verification for all orchestrator settings.
+- **Smart Speed & Cost Optimization:** Implemented "Dumb Pedant" (local linting) and "Pre-flight Compression" (context pruning before auditing), significantly reducing API costs and LLM hallucinations.
+- **Agent Safety Shield:** Integrated a core-level safeguard (Sanitization Shield) to prevent agents from prematurely marking tasks as completed (Anti-Privilege Escalation).
+- **VCS Idempotency:** The system now intelligently handles existing Pull Requests (422 errors) and automatically waits for cloud test results via GHA Polling.
+- **Goal-Based Branching:** Automated branching logic tied to the high-level objective (`feat/GOAL-XXX`) to ensure branch isolation and protect the `main` branch.
 
 ### Fixed
-- **Zero-Tolerance Quality:** Resolved 100% of Mypy and Ruff violations (unused arguments, type-hinting, docstyles).
-- **Test Integrity:** Achieved 108/108 pass rate for kernel tests. Updated `conftest.py` fixtures to accurately mock the Model 5.3 structure.
+- **Semantic Parser:** Robust Regex-based parsing for `SESSION.md` and `TASKS.md`, implementing Postel's Law to tolerate minor formatting inconsistencies.
+- **Routing Logic:** Fixed a state gap where the pipeline now correctly re-runs Linter and Testing stages after any code change or rollback.
+- **Skill Standardization:** All utility scripts translated to English, paths updated for Model 5.3+, and types hardened for 100% Mypy compliance.
 
 ---
 
-## [Model 5.2.1] - 2026-02-27
+## [Model 5.5.0] - 2026-03-07
 ### Added
-- **Rate Limit Protection:** Added `loop_delay_seconds` to `agent_config.json` and implemented sleep logic in `engine.py`.
-- `CHANGELOG.md` to track architectural evolution.
-- `agent_native/` directory as an architectural marker for Phase 2 Rust integration.
-
-### Changed
-- **Massive Architectural Refactoring (Model 5.2):** Established strict bimetric isolation of the orchestrator from the target application workspace.
-- Migrated kernel logic to `agent_core/`.
-- Migrated system memory to `agent_context/`.
-- Migrated framework tests to `agent_tests/`.
+- **Native VCS Integration:** Replaced legacy bash scripts with native Python Git and GitHub API clients.
+- **Look-Ahead Completion:** Automatic goal closure immediately following the final task execution.
+- **State-Sync Logic:** Introduced Micro-commits to synchronize orchestrator meta-state to the cloud in real-time.
 
 ---
 
-## [v7.7.0] - Autonomous Resilience and Bimetric Logic
+## [Model 5.4.0] - 2026-03-02
 ### Added
-- **Smart Fallback:** Added to `APIClient` for automatic provider switching.
-- **Silent Sanitization:** Automatic removal of Markdown code blocks from AI responses.
-- **Bimetric Section Logic:** Strictly separated `[USER_SECTION]` from `[AGENT_SECTION]`.
+- **Network Hardening:** Migrated to `httpx` + `stamina` for enterprise-grade resilience against API timeouts and rate limits.
+- **Structured Logging:** Implemented `structlog` and `rich` for beautiful local console output and machine-readable JSON logs in CI.
 
 ---
 
-## [v6.0.0] - OOP Calculator & Infrastructure Split
-### Changed
-- **Infrastructure Split:** Split test suite into kernel and application logic.
-- Refactored `calculator.py` to use an Object-Oriented (class-based) approach.
-
----
-
-## [v5.6.0] - Gold Master
+## [Model 5.3.0] - 2026-03-01
 ### Added
-- Initial commit: Agent-CI-Lens v5.6 (Gold Master).
-- Core architecture (Router, Validator, Indexer).
-- Full skill suite (Testing, Security, Git, MCP).
+- **Bimetric Architecture:** Strict separation of human instructions from agent activity via the `[FEEDBACK]` section.
+- **E2E Testing:** Introduced automated End-to-End verification flows (e.g., Palindrome flow).
+- **Pydantic State:** Transitioned system configuration and state management to strict Pydantic V2 models.
+
+---
+
+## [v5.6.0] - 2025-02-25
+### Added
+- Initial Gold Master release. Core architecture (Router, Validator, Indexer) and base skill suite.
+

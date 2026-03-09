@@ -1,141 +1,133 @@
 #!/usr/bin/env python3
 # The MIT License (MIT)
-# Copyright (c) 2026 Jozef Darida  (LinkedIn/Xing)
+# Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
 """
-context-compressor/scripts/summarize.py
-Komprimuje ACTION_LOG v SESSION.md a archivuje pôvodný obsah.
-
-Použitie:
-    uv run python .claude/skills/context-compressor/scripts/summarize.py
-    uv run python .claude/skills/context-compressor/scripts/summarize.py --dry-run
+context-compressor/scripts/summarize.py (v 1.3)
+Compresses ACTION_LOG in SESSION.md by removing noise and keeping essential facts.
+Fixed sub-section parsing for Model 5.3 structure.
 """
+
 import argparse
 import re
 import sys
 from datetime import datetime
 from pathlib import Path
 
+# Paths configuration
 ROOT = Path(__file__).parent.parent.parent.parent.parent.resolve()
-SESSION_PATH = ROOT / "docs" / "SESSION.md"
+SESSION_PATH = ROOT / "agent_context" / "SESSION.md"
 ARCHIVE_DIR = ROOT / ".claude" / "cache"
 
-
 # ==========================================
-# PRAVIDLÁ: Čo je dôležitý fakt vs šum
-# (definované v references/memory-map.md)
+# RULES: Fact vs. Noise
 # ==========================================
 NOISE_PATTERNS = [
-    r"Agent \w+ dokončil\. Skilly: \d+",   # "Agent queen dokončil. Skilly: 0"
-    r"Token budget: \d+/\d+",              # "Token budget: 1234/8000"
-    r"Mock odpoveď pre agenta",             # Mock logy
-    r"STATE → \w+",                        # Stavové prechody (redundantné)
+    r"Agent \w+ finished\. Skills: \d+",
+    r"Token budget: \d+/\d+",
+    r"Mock response for agent",
+    r"STATE → \w+",
 ]
 
 IMPORTANT_PATTERNS = [
-    r"HALT",                               # Akýkoľvek HALT záznam
-    r"TASK-\w+.*dokončen",                 # Dokončené tasky
-    r"TASK-\w+.*BLOCKED",                  # Zablokované tasky
-    r"Mypy chyba",                         # Mypy chyby
-    r"API chyba",                          # API chyby
-    r"attempts.*[23]",                     # Vysoký počet pokusov
-    r"Pipeline.*dokončen",                 # Pipeline výsledky
-    r"RESULT:",                            # Výsledky skillov
+    r"HALT",
+    r"TASK-\w+.*(completed|finished)",
+    r"TASK-\w+.*BLOCKED",
+    r"Mypy error",
+    r"API error",
+    r"attempts.*[23]",
+    r"Pipeline.*(completed|finished)",
+    r"RESULT:",
+    r"STAGE_SUCCESS",
+    r"STAGE_FAIL",
 ]
 
 
-def read_session() -> dict[str, str]:
-    """Načíta SESSION.md a vráti sekcie."""
+def read_session_data() -> dict[str, str]:
+    """Extracts all sub-sections from SESSION.md using robust regex."""
     if not SESSION_PATH.exists():
-        print(f"❌ SESSION.md nenájdený: {SESSION_PATH}")
+        print(f"❌ SESSION.md not found: {SESSION_PATH}")
         sys.exit(1)
 
-    content = SESSION_PATH.read_text()
+    content = SESSION_PATH.read_text(encoding="utf-8")
     sections: dict[str, str] = {}
-    current_key = None
-    current_lines: list[str] = []
 
-    for line in content.splitlines():
-        match = re.match(r"^## \[(\w+)\]$", line)
-        if match:
-            if current_key:
-                sections[current_key] = "\n".join(current_lines).strip()
-            current_key = match.group(1)
-            current_lines = []
-        elif current_key:
-            current_lines.append(line)
+    # Extract sub-sections using the same logic as SessionManager
+    patterns = {
+        "CONTEXT": r"###\s*\[?\s*CONTEXT\s*\]?\n(.*?)(?=\n###|$)",
+        "WORKSPACE": r"###\s*\[?\s*WORKSPACE\s*\]?\n(.*?)(?=\n###|$)",
+        "STATE": r"###\s*\[?\s*STATE\s*\]?\n(.*?)(?=\n###|$)",
+        "FEEDBACK": r"###\s*\[?\s*FEEDBACK\s*\]?\n(.*?)(?=\n###|$)",
+        "ACTION_LOG": r"###\s*\[?\s*ACTION_LOG\s*\]?\n(.*?)(?=\n###|$)",
+    }
 
-    if current_key:
-        sections[current_key] = "\n".join(current_lines).strip()
+    for key, pattern in patterns.items():
+        match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
+        sections[key] = match.group(1).strip() if match else ""
 
     return sections
 
 
-def write_session(sections: dict[str, str]) -> None:
-    """Zapíše SESSION.md."""
-    lines = ["# Aktuálna Pracovná Relácia", ""]
-    for key in ["STATE", "CONTEXT", "WORKSPACE", "ACTION_LOG"]:
-        lines.append(f"## [{key}]")
-        lines.append(sections.get(key, ""))
-        lines.append("")
-    SESSION_PATH.write_text("\n".join(lines))
+def write_session_data(sections: dict[str, str]) -> None:
+    """Rebuilds SESSION.md in canonical format with compressed logs."""
+    content = (
+        "# Agent-CI-Lens SESSION\n\n"
+        "## [USER_SECTION]\n"
+        "### [CONTEXT]\n"
+        f"{sections.get('CONTEXT', '')}\n\n"
+        "### [WORKSPACE]\n"
+        f"{sections.get('WORKSPACE', '')}\n\n"
+        "---\n\n"
+        "## [AGENT_SECTION]\n"
+        "### [STATE]\n"
+        f"{sections.get('STATE', 'IDLE')}\n\n"
+        "### [FEEDBACK]\n"
+        f"{sections.get('FEEDBACK', '')}\n\n"
+        "### [ACTION_LOG]\n"
+        f"{sections.get('ACTION_LOG', '')}\n"
+    )
+    SESSION_PATH.write_text(content, encoding="utf-8")
 
 
-def is_noise(line: str) -> bool:
-    """Vráti True ak je riadok šum."""
-    for pattern in NOISE_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return True
-    return False
-
-
-def is_important(line: str) -> bool:
-    """Vráti True ak je riadok dôležitý fakt."""
-    for pattern in IMPORTANT_PATTERNS:
-        if re.search(pattern, line, re.IGNORECASE):
-            return True
-    return False
-
-
-def compress_action_log(action_log: str) -> tuple[str, dict]:
-    """
-    Komprimuje ACTION_LOG.
-    Vráti (komprimovaný_log, štatistiky).
-    """
-    lines = [l for l in action_log.splitlines() if l.strip()]
+def compress_action_log(action_log: str) -> tuple[str, dict[str, int]]:
+    """Filters noise and deduplicates records in the action log."""
+    lines = [line for line in action_log.splitlines() if line.strip()]
     if not lines:
         return action_log, {"original": 0, "compressed": 0, "removed": 0}
 
-    important_lines = []
+    important_lines: list[str] = []
     noise_count = 0
 
     for line in lines:
-        if is_important(line):
+        is_important = any(re.search(p, line, re.IGNORECASE) for p in IMPORTANT_PATTERNS)
+        is_noise = any(re.search(p, line, re.IGNORECASE) for p in NOISE_PATTERNS)
+
+        if is_important:
             important_lines.append(line)
-        elif is_noise(line):
+        elif is_noise:
             noise_count += 1
         else:
-            # Neutrálne riadky — zachovaj posledných 5
+            # Keep neutral lines (like skill output headers)
             important_lines.append(line)
 
-    # Zachovaj vždy posledný riadok (najnovšia akcia)
+    # Always preserve the very last activity
     if lines and (not important_lines or important_lines[-1] != lines[-1]):
         important_lines.append(lines[-1])
 
-    # Deduplikácia
+    # Deduplication
     seen = set()
-    deduped = []
+    deduped: list[str] = []
     for line in important_lines:
+        # Normalize line by removing timestamp for comparison
         key = re.sub(r"\[\d{2}:\d{2}\]", "", line).strip()
         if key not in seen:
             seen.add(key)
             deduped.append(line)
 
     timestamp = datetime.now().strftime("%H:%M")
-    header = f"[{timestamp}] [KOMPRIMOVANÉ: {len(lines)} → {len(deduped)} riadkov, {noise_count} šum odstránený]"
-
-    compressed = header + "\n" + "\n".join(deduped)
+    header = f"[{timestamp}][COMPRESSED: {len(lines)} -> {len(deduped)} lines, {noise_count} noise records removed]"
+    compressed = f"{header}\n" + "\n".join(deduped)
 
     return compressed, {
         "original": len(lines),
@@ -145,70 +137,42 @@ def compress_action_log(action_log: str) -> tuple[str, dict]:
 
 
 def archive_log(action_log: str) -> Path:
-    """Archivuje pôvodný ACTION_LOG."""
+    """Archives original log before compression."""
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    archive_path = ARCHIVE_DIR / f"session-archive-{timestamp}.md"
-
-    content = f"# Session Archive — {timestamp}\n\n"
-    content += "## Pôvodný ACTION_LOG\n\n"
-    content += action_log
-
-    archive_path.write_text(content)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    archive_path = ARCHIVE_DIR / f"session-archive-{ts}.md"
+    archive_path.write_text(f"# Log Archive {ts}\n\n{action_log}", encoding="utf-8")
     return archive_path
 
 
-def count_tokens(text: str) -> int:
-    """Heuristický odhad tokenov."""
-    return int(len(text.split()) * 1.5)
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Context-Compressor: SESSION.md zhrnutie")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Zobraz čo by sa stalo bez skutočnej zmeny")
+    parser = argparse.ArgumentParser(description="Context-Compressor: SESSION.md optimizer")
+    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    print("🗜️  Context-Compressor")
-    print(f"   Session: {SESSION_PATH.relative_to(ROOT)}")
+    print("🗜️  Context-Compressor (v1.3)")
 
-    sections = read_session()
+    sections = read_session_data()
     action_log = sections.get("ACTION_LOG", "")
 
-    if not action_log.strip():
-        print("   ℹ️  ACTION_LOG je prázdny — nič na komprimovanie")
+    if not action_log:
+        print("   ℹ️  ACTION_LOG is empty or could not be parsed.")  # noqa: RUF001
         print("RESULT:COMPRESS_SKIP")
         sys.exit(0)
 
-    tokens_before = count_tokens(action_log)
+    print(f"   DEBUG: Processing {len(action_log.splitlines())} lines.")
+
     compressed_log, stats = compress_action_log(action_log)
-    tokens_after = count_tokens(compressed_log)
-    saved = tokens_before - tokens_after
 
-    print(f"\n📊 Analýza:")
-    print(f"   Riadky:  {stats['original']} → {stats['compressed']}")
-    print(f"   Šum:     {stats['removed']} riadkov odstránených")
-    print(f"   Tokeny:  ~{tokens_before} → ~{tokens_after} (ušetrené: ~{saved})")
-
-    if args.dry_run:
-        print("\n[DRY RUN] Žiadne zmeny neboli vykonané")
-        print("\nKomprimovaný log by bol:")
-        print("-" * 40)
-        print(compressed_log)
+    if not args.dry_run:
+        archive_log(action_log)
+        sections["ACTION_LOG"] = compressed_log
+        write_session_data(sections)
+        print(f"✅ SESSION.md updated. Removed {stats['removed']} lines.")
+        print("RESULT:COMPRESS_OK")
+    else:
+        print(f"[DRY RUN] Would remove {stats['removed']} lines.")
         print("RESULT:COMPRESS_DRY_RUN")
-        sys.exit(0)
-
-    # Archivuj pôvodný log
-    archive_path = archive_log(action_log)
-    print(f"\n📦 Archivované: {archive_path.relative_to(ROOT)}")
-
-    # Zapíš komprimovanú verziu
-    sections["ACTION_LOG"] = compressed_log
-    write_session(sections)
-
-    print(f"✅ SESSION.md aktualizovaný")
-    print(f"RESULT:COMPRESS_OK:saved={saved}tokens")
-    sys.exit(0)
 
 
 if __name__ == "__main__":

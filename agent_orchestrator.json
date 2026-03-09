@@ -24,7 +24,7 @@
   },
   "workflow_local": {
     "ANALYSE": {
-      "active": { "value": false , "description": "Diagnostic phase: Agent assesses the codebase and requirements." },
+      "active": { "value": true , "description": "Diagnostic phase: Agent assesses the codebase and requirements." },
       "max_retries": { "value": 3 }
     },
     "PLANNING": {
@@ -36,15 +36,15 @@
       "max_retries": { "value": 3 }
     },
     "LINTING": {
-      "active": { "value": false , "description": "Static analysis: Enforcing PEP8, type hints, and code cleanliness." },
+      "active": { "value": true , "description": "Static analysis: Enforcing PEP8, type hints, and code cleanliness." },
       "max_retries": { "value": 5 }
     },
     "TESTING": {
-      "active": { "value": false , "description": "Logic verification: Running the pytest suite against the implementation." },
+      "active": { "value": true , "description": "Logic verification: Running the pytest suite against the implementation." },
       "max_retries": { "value": 3 }
     },
     "VERIFYING": {
-      "active": { "value": false , "description": "Security & QA audit: Final check for secrets and quality patterns." },
+      "active": { "value": true , "description": "Security & QA audit: Final check for secrets and quality patterns." },
       "max_retries": { "value": 3 }
     },
     "VCS_DELIVERY": {

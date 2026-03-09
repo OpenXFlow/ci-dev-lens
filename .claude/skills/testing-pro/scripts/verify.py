@@ -4,34 +4,39 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-testing-pro/scripts/verify.py
-Spúšťač pytest pre Agent-CI-Lens pipeline.
+testing-pro/scripts/verify.py (v 1.2)
+Pytest runner for the Agent-CI-Lens pipeline.
 
-Použitie:
+Usage:
     uv run python .claude/skills/testing-pro/scripts/verify.py
     uv run python .claude/skills/testing-pro/scripts/verify.py --target tests/unit/
 """
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 ROOT = Path(__file__).parent.parent.parent.parent.parent.resolve()
 
+# S607 Fix: Resolve absolute path for the 'uv' executable
+UV_PATH = shutil.which("uv") or "uv"
 
-def run_tests(target: str) -> dict:
-    """Spustí pytest a vráti štruktúrovaný výsledok."""
+
+def run_tests(target: str) -> dict[str, Any]:
+    """Runs pytest and returns a structured result."""
     cmd = [
-        "uv",
+        UV_PATH,
         "run",
         "pytest",
         target,
-        "--tb=short",  # Krátky traceback
+        "--tb=short",  # Short traceback
         "--no-header",
-        "-q",  # Quiet mode — menej šumu
-        "--json-report",  # JSON výstup
+        "-q",  # Quiet mode — less verbose
+        "--json-report",  # JSON output
         "--json-report-file=.claude/cache/pytest-report.json",
     ]
 
@@ -42,54 +47,57 @@ def run_tests(target: str) -> dict:
             capture_output=True,
             text=True,
             timeout=120,
+            check=False,
         )
-        return {
-            "exit_code": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
     except subprocess.TimeoutExpired:
         return {
             "exit_code": -1,
             "stdout": "",
-            "stderr": "TIMEOUT: Testy bežali dlhšie ako 120 sekúnd",
+            "stderr": "TIMEOUT: Tests ran longer than 120 seconds",
         }
     except FileNotFoundError:
         return {
             "exit_code": -1,
             "stdout": "",
-            "stderr": "ERROR: uv alebo pytest nie je nainštalovaný",
+            "stderr": f"ERROR: '{UV_PATH}' or 'pytest' is not installed",
+        }
+    else:
+        # TRY300 Fix: Moved return statement to the else block
+        return {
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
         }
 
 
-def parse_report() -> dict:
-    """Načíta JSON report z pytest-json-report."""
+def parse_report() -> dict[str, Any]:
+    """Loads the JSON report from pytest-json-report."""
     report_path = ROOT / ".claude" / "cache" / "pytest-report.json"
     if not report_path.exists():
         return {}
     try:
-        return json.loads(report_path.read_text())
+        # SURGICAL PATCH: Cast return type to satisfy Mypy
+        return cast(dict[str, Any], json.loads(report_path.read_text()))
     except json.JSONDecodeError:
         return {}
 
 
-def summarize(result: dict, report: dict) -> dict:
-    """Zostaví prehľad výsledkov."""
+def summarize(result: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+    """Builds a summary of the test results."""
     passed = report.get("summary", {}).get("passed", 0)
     failed = report.get("summary", {}).get("failed", 0)
     errors = report.get("summary", {}).get("error", 0)
     total = report.get("summary", {}).get("total", 0)
 
-    # Zber zlyhaných testov
-    failed_tests = []
-    for test in report.get("tests", []):
-        if test.get("outcome") in ("failed", "error"):
-            failed_tests.append(
-                {
-                    "name": test.get("nodeid", "unknown"),
-                    "message": test.get("call", {}).get("longrepr", "")[:300],
-                }
-            )
+    # PERF401 Fix: Used list comprehension instead of manual loop
+    failed_tests = [
+        {
+            "name": test.get("nodeid", "unknown"),
+            "message": test.get("call", {}).get("longrepr", "")[:300],
+        }
+        for test in report.get("tests", [])
+        if test.get("outcome") in ("failed", "error")
+    ]
 
     return {
         "passed": passed,
@@ -103,22 +111,28 @@ def summarize(result: dict, report: dict) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Testing-Pro: pytest wrapper")
-    parser.add_argument("--target", default="tests/", help="Cieľový adresár pre pytest")
+    parser.add_argument("--target", default="tests/", help="Target directory for pytest")
     args = parser.parse_args()
 
-    print(f"🧪 Spúšťam testy: {args.target}")
+    print(f"🧪 Running tests: {args.target}")
 
-    # Kontrola či pytest-json-report je nainštalovaný
-    check = subprocess.run(["uv", "run", "python", "-c", "import pytest_jsonreport"], cwd=ROOT, capture_output=True)
+    # S607 Fix: Use UV_PATH instead of raw string
+    check = subprocess.run(
+        [UV_PATH, "run", "python", "-c", "import pytest_jsonreport"], cwd=ROOT, capture_output=True, check=False
+    )
+
     if check.returncode != 0:
-        # Fallback bez JSON reportu
-        print("⚠️  pytest-json-report nie je nainštalovaný, používam základný výstup")
-        result = subprocess.run(["uv", "run", "pytest", args.target, "--tb=short", "-q"], cwd=ROOT)
-        if result.returncode == 0:
+        # Fallback without JSON report
+        print("⚠️  pytest-json-report not found, using basic output")
+        # S607 Fix: Use UV_PATH instead of raw string
+        fallback_proc = subprocess.run(
+            [UV_PATH, "run", "pytest", args.target, "--tb=short", "-q"], cwd=ROOT, check=False
+        )
+        if fallback_proc.returncode == 0:
             print("RESULT:PASS")
         else:
             print("RESULT:TEST_FAIL")
-        sys.exit(result.returncode)
+        sys.exit(fallback_proc.returncode)
 
     result = run_tests(args.target)
     report = parse_report()
@@ -131,10 +145,10 @@ def main() -> None:
 
     if summary["failed_tests"]:
         print("\n❌ Failed tests:")
-        for t in summary["failed_tests"][:5]:  # Max 5 pre kontextové okno
+        for t in summary["failed_tests"][:5]:  # Max 5 for context window
             print(f"   • {t['name']}")
             if t["message"]:
-                # Prvý riadok chybovej správy
+                # First line of the error message
                 first_line = t["message"].splitlines()[0] if t["message"] else ""
                 print(f"     {first_line}")
 

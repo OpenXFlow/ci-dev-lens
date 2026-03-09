@@ -5,13 +5,13 @@
 
 """
 agent_tests/test_router.py - Core Engine unit tests.
-Focuses on Session, Tasks, Halt, Budgeting and basic Agent invocation logic.
+(v 1.21) Added unit tests for Dumb Pedant optimization.
 """
 
 import time
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import create_autospec, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 import stamina  # type: ignore
@@ -27,9 +27,6 @@ from agent_core.router_core.models import (
 from agent_core.router_core.utils import count_tokens
 
 
-# ==========================================
-# GLOBAL TEST FIXTURES
-# ==========================================
 @pytest.fixture(autouse=True)
 def fast_tests_no_sleep(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
     """Globally disable time.sleep and stamina retries during tests."""
@@ -91,9 +88,6 @@ def create_mock_config() -> OrchestratorConfigModel:
     )
 
 
-# ==========================================
-# 1. CORE UTILITIES
-# ==========================================
 class TestCountTokens:
     def test_empty_string(self) -> None:
         assert count_tokens("") == 0
@@ -105,9 +99,6 @@ class TestCountTokens:
         assert count_tokens("hello world foo bar") > count_tokens("hello")
 
 
-# ==========================================
-# 2. SESSION MANAGER
-# ==========================================
 class TestSessionManager:
     def test_read_existing_session(self, tmp_project: Path) -> None:
         sm = SessionManager()
@@ -156,9 +147,6 @@ class TestSessionManager:
         assert "### [FEEDBACK]" in content
 
 
-# ==========================================
-# 3. TASKS MANAGER
-# ==========================================
 class TestTasksManager:
     def test_get_active_tasks(self, tmp_project: Path) -> None:
         tm = TasksManager()
@@ -195,9 +183,6 @@ class TestTasksManager:
         assert "- [x] GOAL-001" in tm.path.read_text()
 
 
-# ==========================================
-# 4. HALT MANAGER
-# ==========================================
 class TestHaltManager:
     def test_initial_state(self, tmp_project: Path) -> None:
         hm = HaltManager()
@@ -212,9 +197,6 @@ class TestHaltManager:
         assert "Stop" in hm.flag_path.read_text()
 
 
-# ==========================================
-# 5. TOKEN BUDGET MANAGER
-# ==========================================
 class TestTokenBudgetManager:
     def test_ok_zone(self) -> None:
         cfg = create_mock_config()
@@ -232,9 +214,6 @@ class TestTokenBudgetManager:
         assert tbm.check("word " * 40) == "red"
 
 
-# ==========================================
-# 6. API CLIENT
-# ==========================================
 class TestAPIClient:
     def test_mock_response(self) -> None:
         env = EnvConfig(MOCK=True)
@@ -251,9 +230,6 @@ class TestAPIClient:
         assert "MOCK" in res or "Mock response" in res
 
 
-# ==========================================
-# 7. ROUTER: RUN_AGENT
-# ==========================================
 class TestRouterRunAgent:
     @pytest.fixture
     def router(self, tmp_project: Path, monkeypatch: pytest.MonkeyPatch) -> Router:
@@ -315,9 +291,6 @@ class TestRouterRunAgent:
             assert mock_run.call_count == 2
 
 
-# ==========================================
-# 8. ROUTER RUN PIPELINE
-# ==========================================
 class TestRouterPipeline:
     @pytest.fixture
     def router(self, tmp_project: Path, monkeypatch: pytest.MonkeyPatch) -> Router:
@@ -336,7 +309,7 @@ class TestRouterPipeline:
         return r
 
     def test_pipeline_success(self, router: Router) -> None:
-        def mock_agent(agent_name: str, task_desc: str, current_state: str, tid: str | None = None) -> dict:  # noqa: ARG001
+        def mock_agent(_agent_name: str, _task_desc: str, _current_state: str, _tid: str | None = None) -> dict:
             return {"status": "OK"}
 
         with (
@@ -347,11 +320,54 @@ class TestRouterPipeline:
             assert router.session.read()["STATE"] == "IDLE"
 
     def test_pipeline_halt_on_agent_error(self, router: Router) -> None:
-        def mock_agent(agent_name: str, task_desc: str, current_state: str, tid: str | None = None) -> dict:  # noqa: ARG001
-            if agent_name == "developer":
+        def mock_agent(_agent_name: str, _task_desc: str, _current_state: str, _tid: str | None = None) -> dict:
+            if _agent_name == "developer":
                 return {"error": "API_SYSTEM_ERROR"}
             return {"status": "OK"}
 
         with patch.object(router, "run_agent", side_effect=mock_agent):
             router.run_pipeline()
             assert router.session.read()["STATE"] == "BLOCKED"
+
+    # --- ARCHITECT FIX: Dumb Pedant Tests ---
+    def test_dumb_pedant_success_skips_llm(self, router: Router) -> None:
+        """Verify that a perfect local linting result skips the LLM call entirely."""
+        router.tasks.get_active_tasks = MagicMock(
+            return_value=[{"id": "001", "description": "task", "is_synthetic": False}]
+        )
+
+        # Turn everything off except LINTING
+        for stage in ["ANALYSE", "PLANNING", "EXECUTING", "TESTING", "VERIFYING", "VCS_DELIVERY"]:
+            router.orch_config.workflow_local[stage].active.value = False
+        router.orch_config.workflow_local["LINTING"].active.value = True
+
+        with (
+            patch.object(router, "_run_skill_process", return_value=("RESULT:PASS", "ok")) as mock_skill,
+            patch.object(router, "run_agent") as mock_agent,
+        ):
+            router.run_pipeline()
+
+            mock_skill.assert_called_once()
+            # Crucial assertion: AI was never invoked because Dumb Pedant handled it
+            mock_agent.assert_not_called()
+            assert "STAGE_SUCCESS:LINTING:001" in router.session.read()["ACTION_LOG"]
+
+    def test_dumb_pedant_failure_calls_llm(self, router: Router) -> None:
+        """Verify that if local linting fails, it correctly falls back to calling the LLM."""
+        router.tasks.get_active_tasks = MagicMock(
+            return_value=[{"id": "001", "description": "task", "is_synthetic": False}]
+        )
+
+        for stage in ["ANALYSE", "PLANNING", "EXECUTING", "TESTING", "VERIFYING", "VCS_DELIVERY"]:
+            router.orch_config.workflow_local[stage].active.value = False
+        router.orch_config.workflow_local["LINTING"].active.value = True
+
+        with (
+            patch.object(router, "_run_skill_process", return_value=("RESULT:MYPY_FAIL", "error")) as mock_skill,
+            patch.object(router, "run_agent", return_value={"status": "OK"}) as mock_agent,
+        ):
+            router.run_pipeline()
+
+            mock_skill.assert_called_once()
+            # Crucial assertion: AI was invoked because Dumb Pedant failed to fix everything
+            mock_agent.assert_called_once()

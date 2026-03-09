@@ -4,13 +4,14 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-handoff-manager/scripts/dump_state.py
-Uloží kompletný stav session pred ukončením.
+handoff-manager/scripts/dump_state.py (v 1.2)
+Saves the complete session state before termination.
 
-Použitie:
+Usage:
     uv run python .claude/skills/handoff-manager/scripts/dump_state.py
     uv run python .claude/skills/handoff-manager/scripts/dump_state.py --reason "HALT: max attempts"
 """
+
 import argparse
 import re
 import sys
@@ -18,8 +19,8 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent.parent.parent.parent.resolve()
-SESSION_PATH = ROOT / "docs" / "SESSION.md"
-TASKS_PATH = ROOT / "docs" / "TASKS.md"
+SESSION_PATH = ROOT / "agent_context" / "SESSION.md"
+TASKS_PATH = ROOT / "agent_context" / "TASKS.md"
 ARCHIVE_DIR = ROOT / ".claude" / "cache"
 TEMPLATE_PATH = Path(__file__).parent.parent / "assets" / "template.md"
 
@@ -27,7 +28,7 @@ TEMPLATE_PATH = Path(__file__).parent.parent / "assets" / "template.md"
 def read_session() -> dict[str, str]:
     if not SESSION_PATH.exists():
         return {}
-    content = SESSION_PATH.read_text()
+    content = SESSION_PATH.read_text(encoding="utf-8")
     sections: dict[str, str] = {}
     current_key = None
     current_lines: list[str] = []
@@ -49,7 +50,7 @@ def read_tasks() -> dict[str, list[str]]:
     if not TASKS_PATH.exists():
         return {"active": [], "completed": [], "blocked": []}
     active, completed, blocked = [], [], []
-    for line in TASKS_PATH.read_text().splitlines():
+    for line in TASKS_PATH.read_text(encoding="utf-8").splitlines():
         if line.startswith("- [ ]"):
             active.append(line)
         elif line.startswith("- [x]"):
@@ -60,16 +61,17 @@ def read_tasks() -> dict[str, list[str]]:
 
 
 def get_last_actions(action_log: str, n: int = 10) -> list[str]:
-    lines = [l for l in action_log.splitlines() if l.strip()]
+    # E741 Fix: Renamed ambiguous 'l' to 'line'
+    lines = [line for line in action_log.splitlines() if line.strip()]
     return lines[-n:]
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Handoff-Manager: dump stavu session")
-    parser.add_argument("--reason", default="Manuálny handoff", help="Dôvod uloženia")
+    parser = argparse.ArgumentParser(description="Handoff-Manager: session state dump")
+    parser.add_argument("--reason", default="Manual handoff", help="Reason for state saving")
     args = parser.parse_args()
 
-    print("💾 Handoff-Manager: ukladám stav...")
+    print("💾 Handoff-Manager: saving state...")
 
     session = read_session()
     tasks = read_tasks()
@@ -81,55 +83,52 @@ def main() -> None:
 
     lines = [
         f"# Handoff — {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        f"**Dôvod:** {args.reason}",
+        f"**Reason:** {args.reason}",
         "",
-        "## Stav pri ukončení",
+        "## End-of-session state",
         f"- STATE: `{session.get('STATE', 'UNKNOWN')}`",
         "",
-        "## Kontext",
-        session.get("CONTEXT", "Žiadny kontext."),
+        "## Context",
+        session.get("CONTEXT", "No context provided."),
         "",
         "## Workspace",
-        session.get("WORKSPACE", "Žiadne súbory."),
+        session.get("WORKSPACE", "No files tracked."),
         "",
-        "## Tasky",
-        f"**Aktívne ({len(tasks['active'])}):**",
+        "## Tasks",
+        f"**Active ({len(tasks['active'])}):**",
     ]
-    for t in tasks["active"]:
-        lines.append(f"  {t}")
+    # PERF401 Fix: Use extend for list transformation
+    lines.extend(f"  {t}" for t in tasks["active"])
 
-    lines += [
-        f"\n**Dokončené ({len(tasks['completed'])}):**",
-    ]
-    for t in tasks["completed"]:
-        lines.append(f"  {t}")
+    # PERF401 Fix: Optimized list extension
+    lines.append(f"\n**Completed ({len(tasks['completed'])}):**")
+    lines.extend(f"  {t}" for t in tasks["completed"])
 
     if tasks["blocked"]:
-        lines += [f"\n**Zablokované ({len(tasks['blocked'])}):**"]
-        for t in tasks["blocked"]:
-            lines.append(f"  {t}")
+        lines.append(f"\n**Blocked ({len(tasks['blocked'])}):**")
+        lines.extend(f"  {t}" for t in tasks["blocked"])
 
     lines += [
         "",
-        "## Posledné akcie (max 10)",
+        "## Last actions (max 10)",
     ]
-    for action in last_actions:
-        lines.append(f"  {action}")
+    # PERF401 Fix: Optimized list extension
+    lines.extend(f"  {action}" for action in last_actions)
 
     lines += [
         "",
         "---",
-        "## Inštrukcie pre novú session",
-        "1. Prečítaj tento súbor",
-        "2. Skontroluj aktívne tasky vyššie",
-        "3. Spusti `make validate` a `make status`",
-        "4. Pokračuj od posledného aktívneho tasku",
+        "## Instructions for new session",
+        "1. Read this handoff file",
+        "2. Check the active tasks listed above",
+        "3. Run `make validate` and `make status`",
+        "4. Continue from the last active task",
     ]
 
-    handoff_path.write_text("\n".join(lines))
-    print(f"✅ Handoff uložený: {handoff_path.relative_to(ROOT)}")
-    print(f"   Aktívne tasky: {len(tasks['active'])}")
-    print(f"   Dokončené: {len(tasks['completed'])}")
+    handoff_path.write_text("\n".join(lines), encoding="utf-8")
+    print(f"✅ Handoff saved: {handoff_path.relative_to(ROOT)}")
+    print(f"   Active tasks: {len(tasks['active'])}")
+    print(f"   Completed: {len(tasks['completed'])}")
     print("RESULT:HANDOFF_OK")
     sys.exit(0)
 

@@ -5,7 +5,7 @@
 
 """
 agent_core/router_core/engine.py
-Hybrid Orchestration Engine (v 1.25 VCS Master Kill-Switch).
+Hybrid Orchestration Engine (v 1.29 Targeted Pre-flight Compression).
 """
 
 import re
@@ -83,7 +83,7 @@ class Router:
                 if tid and not str(tid).startswith("GOAL-"):
                     pattern = re.compile(rf"-\s*\[\s*x\s*\]\s*TASK-{tid}\b", re.IGNORECASE)
                     if pattern.search(content):
-                        content = pattern.sub(f"-[ ] TASK-{tid}", content)
+                        content = pattern.sub(f"- [ ] TASK-{tid}", content)
                         w.content = content
                         log(
                             f"Sanitized TASKS.md: Prevented agent from prematurely marking TASK-{tid} as [x]",
@@ -180,7 +180,7 @@ class Router:
                         md_lines = [user_section, "", "---", "", "## [AGENT_PROGRESS]"]
                         for t in tasks:
                             icon = "[x]" if t.status == "completed" else "[ ]"
-                            md_lines.append(f"- {icon} TASK-{t.id}: {t.description.strip()} [attempts: {t.attempts}]")
+                            md_lines.append(f"- {icon} TASK-{t.id}: {t.description.strip()}[attempts: {t.attempts}]")
 
                         writes.append(FileWrite(path="agent_context/TASKS.md", content="\n".join(md_lines) + "\n"))
 
@@ -235,7 +235,6 @@ class Router:
         cfg = self.orch_config.vcs_control
         log(f"📦 VCS Delivery (Mode: {cfg.mode.value})", "PIPELINE", tid)
 
-        # Branch is aligned strictly with the Active GOAL
         is_branch_per_goal = cfg.local_git_settings.branch_per_goal.value
         active_goal = self.tasks.get_current_goal_id()
         branch = f"feat/{active_goal}" if is_branch_per_goal and active_goal else "main"
@@ -256,7 +255,6 @@ class Router:
 
                     if cfg.github_settings.auto_pr.value:
                         try:
-                            # PR name uses the active goal for consistency
                             pr_name = active_goal if active_goal else tid
                             pr = gh.create_pull_request(branch, f"PROPOSAL: GOAL-{pr_name}", "Automated PR.")
                             log(f"PR Created: {pr.html_url}", "OK", tid)
@@ -281,7 +279,6 @@ class Router:
 
     def _sync_vcs_state(self, tid: str) -> None:
         """Helper to sync orchestration meta-state (TASKS.md, SESSION.md) to Git."""
-        # ARCHITECT FIX: Master Kill-Switch check for State-Sync
         vcs_stage_cfg = self.orch_config.workflow_local.get("VCS_DELIVERY")
         if not vcs_stage_cfg or not vcs_stage_cfg.active.value:
             return
@@ -316,9 +313,6 @@ class Router:
             tid = str(task["id"])
             log(f"Processing {tid}", "PIPELINE", tid)
 
-            # =================================================================
-            # ARCHITECT UPDATE: Eager Branching with Master Kill-Switch Check
-            # =================================================================
             vcs_stage_cfg = local_wf.get("VCS_DELIVERY")
             is_vcs_enabled = vcs_stage_cfg and vcs_stage_cfg.active.value
 
@@ -328,7 +322,6 @@ class Router:
                     active_goal = self.tasks.get_current_goal_id()
                     if active_goal:
                         self.git.ensure_branch(f"feat/{active_goal}")
-            # =================================================================
 
             if task.get("is_synthetic"):
                 fb = self.session.read().get("FEEDBACK", "")
@@ -373,6 +366,30 @@ class Router:
                     case "VCS_DELIVERY":
                         success = self._run_vcs_delivery(tid)
                         res = {"status": "OK"} if success else {"error": "VCS_FAIL"}
+
+                    case "LINTING":
+                        # ARCHITECT FIX: Dumb Pedant Optimization
+                        log("Executing Dumb Pedant (Local Autofix & Linter)...", "INFO", tid)
+                        tag, out = self._run_skill_process("quality-gate", {}, tid)
+
+                        if "RESULT:PASS" in tag:
+                            log("Dumb Pedant passed perfectly. Skipping AI Pedant.", "OK", tid)
+                            res = {"status": "OK"}
+                            success = True
+                        else:
+                            log("Dumb Pedant found complex errors. Escalating to AI...", "WARN", tid)
+                            self.session.write_action_log(f"Dumb Pedant Error:\n{out[:250]}...")
+                            res = self.run_agent(agent, task["description"], state, tid)
+                            success = "error" not in res
+
+                    case "VERIFYING":
+                        # ARCHITECT FIX: Targeted Pre-flight Compression
+                        log("Compressing context before Verifying (Pre-flight)...", "INFO", tid)
+                        self._run_skill_process("context-compressor", {}, tid)
+
+                        res = self.run_agent(agent, task["description"], state, tid)
+                        success = "error" not in res
+
                     case _:
                         res = self.run_agent(agent, task["description"], state, tid)
                         success = "error" not in res
@@ -395,9 +412,14 @@ class Router:
                         if state in {"LINTING", "TESTING", "VERIFYING", "VCS_DELIVERY"}:
                             s = self.session.read()
                             action_log_curr = s.get("ACTION_LOG", "")
-                            old_tag = f"STAGE_SUCCESS:EXECUTING:{tid}"
-                            new_tag = f"REVERTED:EXECUTING:{tid}"
-                            s["ACTION_LOG"] = action_log_curr.replace(old_tag, new_tag)
+
+                            stages_to_revert = ["EXECUTING", "LINTING", "TESTING", "VERIFYING"]
+                            for s_rev in stages_to_revert:
+                                old_tag = f"STAGE_SUCCESS:{s_rev}:{tid}"
+                                new_tag = f"REVERTED:{s_rev}:{tid}"
+                                action_log_curr = action_log_curr.replace(old_tag, new_tag)
+
+                            s["ACTION_LOG"] = action_log_curr
                             self.session._write_all(s)
 
                         task_success = False
