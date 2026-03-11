@@ -9,7 +9,7 @@
 <p align="left">
   <strong>Deploy an autonomous swarm of AI agents to architect, implement, and audit your Python code with surgical precision.</strong>
   <br>
-  CI-DEV-Len is a professional-grade framework that bridges the gap between high-level human intent and low-level technical execution.
+  CI-DEV-Lens is a professional-grade framework that bridges the gap between high-level human intent and low-level technical execution.
   <br>
   <em>Precision Vision. Autonomous Execution. Zero-Tolerance Quality.</em>
 </p>

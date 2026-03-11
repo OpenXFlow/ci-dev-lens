@@ -4,7 +4,8 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-agent_tests/e2e/test_e2e_palindrome.py - E2E Verification of the Palindrome Flow (v 1.7)
+agent_tests/e2e/test_e2e_palindrome.py - E2E Verification of the Palindrome Flow (v 1.8)
+Updated to support STRATEGY phase and requires_llm configuration.
 """
 
 import json
@@ -40,9 +41,9 @@ def test_palindrome_e2e_flow(tmp_project: Path, monkeypatch: pytest.MonkeyPatch)
         encoding="utf-8",
     )
 
-    # 3. Inject Valid Orchestrator Config (Matching v1.4 Schema)
+    # 3. Inject Valid Orchestrator Config (Matching v1.5 Schema)
     valid_config = {
-        "version": "1.4",
+        "version": "1.5",
         "workflow_global": {
             "ci_mode": {"value": "local"},
             "loop_mode": {"value": True},
@@ -51,16 +52,15 @@ def test_palindrome_e2e_flow(tmp_project: Path, monkeypatch: pytest.MonkeyPatch)
             "max_continuous_tasks": {"value": 20},
         },
         "workflow_local": {
-            "ANALYSE": {"active": {"value": True}, "max_retries": {"value": 1}},
-            "PLANNING": {"active": {"value": True}, "max_retries": {"value": 1}},
-            "EXECUTING": {"active": {"value": True}, "max_retries": {"value": 1}},
-            "LINTING": {"active": {"value": True}, "max_retries": {"value": 1}},
-            "TESTING": {"active": {"value": True}, "max_retries": {"value": 1}},
-            "VERIFYING": {"active": {"value": True}, "max_retries": {"value": 1}},
-            "VCS_DELIVERY": {"active": {"value": False}, "max_retries": {"value": 1}},
+            "STRATEGY": {"active": {"value": True}, "max_retries": {"value": 1}, "requires_llm": {"value": True}},
+            "EXECUTING": {"active": {"value": True}, "max_retries": {"value": 1}, "requires_llm": {"value": True}},
+            "LINTING": {"active": {"value": True}, "max_retries": {"value": 1}, "requires_llm": {"value": False}},
+            "TESTING": {"active": {"value": True}, "max_retries": {"value": 1}, "requires_llm": {"value": False}},
+            "VERIFYING": {"active": {"value": True}, "max_retries": {"value": 1}, "requires_llm": {"value": True}},
+            "VCS_DELIVERY": {"active": {"value": False}, "max_retries": {"value": 1}, "requires_llm": {"value": False}},
         },
         "vcs_control": {
-            "mode": {"value": "local_git_settings"},
+            "mode": {"value": "local_git"},
             "github_settings": {
                 "auto_push": {"value": True},
                 "auto_pr": {"value": True},

@@ -3,20 +3,30 @@
 # Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
-"""agent_core/router_core/llm.py - LLM infrastructure with Instructor support (v 1.16)."""
+"""
+agent_core/router_core/llm.py (v 1.22)
+LLM infrastructure with Instructor support and automated linting context injection.
+Added 'Pre-flight log cleaner' to mask old failures and provide ACTION_LOG to agents.
+"""
 
-from typing import TypeVar, cast
+from typing import TypeVar
 
 import httpx
 import instructor
-import stamina
+import stamina  # type: ignore
 from openai import OpenAI
+from pydantic import BaseModel
 
 from .models import AgentProfile, EnvConfig, OrchestratorConfigModel
-from .utils import DEFAULT_MOCK_RESPONSES, count_tokens, log
+from .utils import (
+    DEFAULT_MOCK_RESPONSES,
+    count_tokens,
+    load_linter_rules,
+    log,
+)
 
 # Generic type for Pydantic models used by Instructor
-T = TypeVar("T")
+T = TypeVar("T", bound=BaseModel)
 
 
 class TokenBudgetManager:
@@ -98,7 +108,6 @@ class APIClient:
         """Entry point for calling an LLM provider. Supports structured output."""
         provider = profile.provider.upper()
 
-        # Dynamic credential lookup
         creds = self.env.credentials.get(provider)
         keys_str = creds.api_key if creds else None
         base_url = creds.base_url if creds else None
@@ -106,13 +115,10 @@ class APIClient:
         if not keys_str and provider == "GITHUB":
             keys_str = self.env.GITHUB_TOKEN
 
-        # Mocking handling
         if self.mock or not keys_str or "_CHANGE_ME" in keys_str:
             log(f"Mock response for: {agent}", "WARN", tid=tid)
-            mock_data = DEFAULT_MOCK_RESPONSES.get(agent, f"Mock response for {agent}")
-            return mock_data
+            return DEFAULT_MOCK_RESPONSES.get(agent, f"Mock response for {agent}")
 
-        # Mypy arg-type fix: Ensure keys_str is not None
         if keys_str is None:
             raise ValueError(f"Credentials for {provider} are not configured.")
 
@@ -173,21 +179,18 @@ class APIClient:
             wait_exp_base=backoff,
         ):
             with attempt, httpx.Client(timeout=timeout_cfg) as http_client:
-                # Vždy inicializujeme natívneho OpenAI klienta
                 raw_client = OpenAI(api_key=key, base_url=base_url, http_client=http_client)
 
                 if response_model:
-                    # STRUCTURED MODE: Použijeme Instructor wrapper
                     instructor_client = instructor.from_openai(raw_client)
-                    structured_resp = instructor_client.chat.completions.create(
+                    return instructor_client.chat.completions.create(
                         model=p.model,
                         messages=[{"role": "user", "content": prompt}],
                         response_model=response_model,
                         temperature=p.temperature,
                         max_tokens=p.max_tokens,
                     )
-                    return cast(T, structured_resp)
-                # LEGACY MODE: Použijeme čistého OpenAI klienta (Instructor by tu spadol)
+
                 text_resp = raw_client.chat.completions.create(
                     model=p.model,
                     messages=[{"role": "user", "content": prompt}],
@@ -202,7 +205,7 @@ class APIClient:
 class PromptBuilder:
     """Constructs prompts for agents using bimetric context and RAG."""
 
-    def build(self, agent: str, profile: AgentProfile, task: str, session: dict[str, str]) -> str:  # noqa: ARG002
+    def build(self, agent: str, _profile: AgentProfile, task: str, session: dict[str, str], state: str) -> str:
         from .utils import ROOT
 
         persona_path = ROOT / f".agents/{agent}.md"
@@ -217,8 +220,22 @@ class PromptBuilder:
         tasks_md_path = ROOT / "agent_context" / "TASKS.md"
         tasks_md = tasks_md_path.read_text(encoding="utf-8") if tasks_md_path.exists() else ""
 
+        # Selective Linter Rule Injection
+        linter_rules = ""
+        if state in ["STRATEGY", "EXECUTING"]:
+            linter_rules = f"<linting_rules>\n{load_linter_rules()}\n</linting_rules>\n"
+
         user_context = session.get("CONTEXT", "")
         system_feedback = session.get("FEEDBACK", "")
+
+        # ARCHITECT FIX: Pre-flight Log Cleaner (View-Level Masking)
+        # We slice the action log to only show the events after the last major rollback/failure.
+        action_log_full = session.get("ACTION_LOG", "")
+        if "--- NEW ATTEMPT" in action_log_full:
+            action_log_clean = action_log_full.split("--- NEW ATTEMPT")[-1].strip()
+        else:
+            action_log_clean = action_log_full.strip()
+
         feedback_section = ""
         rag_section = ""
 
@@ -253,6 +270,7 @@ class PromptBuilder:
 
         return (
             f"<system_persona>\n{persona}\n</system_persona>\n"
+            f"{linter_rules}"
             f"<project_memory>\n{memory}\n</project_memory>\n"
             f"<codebase_map>\n{agents_md}\n</codebase_map>\n"
             f"<current_tasks>\n{tasks_md}\n</current_tasks>\n"
@@ -260,6 +278,7 @@ class PromptBuilder:
             f"WORKSPACE_FILES: {session.get('WORKSPACE')}\n"
             f"CURRENT_SYSTEM_STATE: {session.get('STATE')}\n"
             f"</current_session_state>\n"
+            f"<current_action_log>\n{action_log_clean}\n</current_action_log>\n"
             f"<user_input>\n"
             f"TASK: {task}\n"
             f"ADDITIONAL INSTRUCTIONS: {user_context}\n"

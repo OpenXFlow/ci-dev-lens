@@ -1,4 +1,4 @@
-# 🖥️ Agent-CI-Lens: User Interface Guide (Model 5.3)
+# 🖥️ Agent-CI-Lens: User Interface Guide (Model 6.0)
 
 In Agent-CI-Lens, the "User Interface" is not a graphical window, but a set of structured Markdown files located in the `agent_context/` directory. These files govern the communication, memory, and task execution of the autonomous agents.
 
@@ -22,12 +22,13 @@ This is the most dynamic file in the system. It implements **Bimetric Isolation*
 
 ### The Bimetric Split:
 1. **`[USER_SECTION]`**: The "Command Deck". This section is Read-Only for agents. It contains instructions from you (the operator).
-2. **`[AGENT_SECTION]`**: The "Engine Room". This is where the Router records the system state and the `ACTION_LOG`.
+2. **`[AGENT_SECTION]`**: The "Engine Room". This is where the Router records the system state and logs.
 
 ### Components:
 - **`[CONTEXT]`**: Where you provide specific, immediate instructions (e.g., *"Focus on performance optimization"*).
 - **`[WORKSPACE]`**: A listing of files currently relevant to the task.
-- **`[STATE]`**: Shows the current state of the machine (IDLE, EXECUTING, etc.).
+- **`[STATE]`**: Shows the current state of the machine (IDLE, STRATEGY, EXECUTING, etc.).
+- **`[FEEDBACK]`**: A dedicated channel for the system to report errors. By separating errors from `[CONTEXT]`, we ensure the AI never confuses a bug report with a human instruction.
 - **`[ACTION_LOG]`**: A chronological record of every skill used and every agent response.
 
 ---
@@ -42,6 +43,7 @@ This file is the "Engine's Blueprint". It manages the transformation of high-lev
 ### Execution Logic:
 - **GOAL**: A high-level requirement (e.g., *"Implement authentication"*).
 - **TASK**: An atomic, verifiable unit of work (e.g., *"Create src/auth.py and tests/test_auth.py"*).
+- **STRATEGY Phase**: In Model 6.0, the Queen agent performs analysis and planning in a single `STRATEGY` phase (Chain of Thought), generating the entire task list at once for efficiency.
 - **Attempts**: Tracks how many times a task has been attempted. After 3 failed attempts, the task is marked as `[BLOCKED]`.
 
 ### Rule:
@@ -74,6 +76,6 @@ If an agent makes a mistake (e.g., a specific Mypy error), and you record the so
 | **I want to change the app's database** | Update `MEMORY.md` |
 | **I want to give a hint for a specific error** | Update `TROUBLESHOOTING.md` |
 | **I want to define a new feature request** | Add to `TASKS.md` |
-| **I want to yell at the agent for being lazy** | Update `SESSION.md` |
+| **I want to tell the agent it's being lazy** | Update `SESSION.md` `[CONTEXT]` |
 
 **Crucial Note:** Never delete the `---` or the section headers in these files. The orchestrator's regular expressions depend on this exact structure to navigate the project's state.

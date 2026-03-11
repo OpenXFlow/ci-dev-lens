@@ -4,9 +4,9 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-context-compressor/scripts/summarize.py (v 1.3)
+context-compressor/scripts/summarize.py (v 1.4)
 Compresses ACTION_LOG in SESSION.md by removing noise and keeping essential facts.
-Fixed sub-section parsing for Model 5.3 structure.
+Fixed recursive header spamming (Anti-Snowball Patch).
 """
 
 import argparse
@@ -28,6 +28,8 @@ NOISE_PATTERNS = [
     r"Token budget: \d+/\d+",
     r"Mock response for agent",
     r"STATE → \w+",
+    r"\[COMPRESSED:.*?\]",  # ARCHITECT FIX: Delete old English headers
+    r"\[KOMPRIMOVANÉ:.*?\]",  # ARCHITECT FIX: Delete old Slovak headers
 ]
 
 IMPORTANT_PATTERNS = [
@@ -73,7 +75,7 @@ def write_session_data(sections: dict[str, str]) -> None:
     """Rebuilds SESSION.md in canonical format with compressed logs."""
     content = (
         "# Agent-CI-Lens SESSION\n\n"
-        "## [USER_SECTION]\n"
+        "##[USER_SECTION]\n"
         "### [CONTEXT]\n"
         f"{sections.get('CONTEXT', '')}\n\n"
         "### [WORKSPACE]\n"
@@ -103,17 +105,18 @@ def compress_action_log(action_log: str) -> tuple[str, dict[str, int]]:
         is_important = any(re.search(p, line, re.IGNORECASE) for p in IMPORTANT_PATTERNS)
         is_noise = any(re.search(p, line, re.IGNORECASE) for p in NOISE_PATTERNS)
 
-        if is_important:
-            important_lines.append(line)
-        elif is_noise:
+        if is_noise:
             noise_count += 1
+        elif is_important:
+            important_lines.append(line)
         else:
             # Keep neutral lines (like skill output headers)
             important_lines.append(line)
 
     # Always preserve the very last activity
-    if lines and (not important_lines or important_lines[-1] != lines[-1]):
-        important_lines.append(lines[-1])
+    if lines and (not important_lines or important_lines[-1] != lines[-1]):  # noqa: SIM102
+        if not any(re.search(p, lines[-1], re.IGNORECASE) for p in NOISE_PATTERNS):
+            important_lines.append(lines[-1])
 
     # Deduplication
     seen = set()
@@ -150,7 +153,7 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    print("🗜️  Context-Compressor (v1.3)")
+    print("🗜️  Context-Compressor (v1.4)")
 
     sections = read_session_data()
     action_log = sections.get("ACTION_LOG", "")

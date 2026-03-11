@@ -3,7 +3,11 @@
 # Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
-"""agent_core/router_core/models.py - Pydantic schemas for orchestrator configuration (v 1.6)."""
+"""
+agent_core/router_core/models.py (v 1.9)
+Pydantic schemas for orchestrator configuration.
+Fixed ANN401 linting violations on model_validator.
+"""
 
 from typing import Any
 
@@ -37,11 +41,7 @@ class EnvConfig(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def parse_dynamic_providers(cls, data: Any) -> Any:  # noqa: ANN401
-        """Groups {NAME}_API_KEY patterns into credentials dict.
-
-        Note: ANN401 is ignored here as Pydantic 'before' validators
-        must handle raw input before type conversion.
-        """
+        """Groups {NAME}_API_KEY patterns into credentials dict."""
         if not isinstance(data, dict):
             return data
         credentials = {}
@@ -82,25 +82,25 @@ class AgentsRegistryModel(BaseModel):
 # 3. SETTING VALUE WRAPPERS
 # ==========================================
 class SettingValueStr(BaseModel):
-    """Container for string settings with descriptions."""
+    """Container for string settings."""
 
     value: str
 
 
 class SettingValueBool(BaseModel):
-    """Container for boolean settings with descriptions."""
+    """Container for boolean settings."""
 
     value: bool
 
 
 class SettingValueInt(BaseModel):
-    """Container for integer settings with descriptions."""
+    """Container for integer settings."""
 
     value: int
 
 
 class SettingValueFloat(BaseModel):
-    """Container for float settings with descriptions."""
+    """Container for float settings."""
 
     value: float
 
@@ -158,6 +158,7 @@ class StageConfig(BaseModel):
 
     active: SettingValueBool
     max_retries: SettingValueInt
+    requires_llm: SettingValueBool = Field(default_factory=lambda: SettingValueBool(value=True))
     pause_after: SettingValueBool | None = None
 
 

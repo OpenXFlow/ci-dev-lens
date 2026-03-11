@@ -5,7 +5,7 @@
 
 """
 agent_core/router_core/engine.py
-Hybrid Orchestration Engine (v 1.29 Targeted Pre-flight Compression).
+Hybrid Orchestration Engine (v 1.34 Typo Fix for PromptBuilder integration).
 """
 
 import re
@@ -79,17 +79,12 @@ class Router:
                     log(f"History Violation: Queen tried to delete tasks {existing_ids - new_ids}", "ERROR", tid)
                     continue
 
-                # ARCHITECT SHIELD: Prevent premature completion
                 if tid and not str(tid).startswith("GOAL-"):
                     pattern = re.compile(rf"-\s*\[\s*x\s*\]\s*TASK-{tid}\b", re.IGNORECASE)
                     if pattern.search(content):
                         content = pattern.sub(f"- [ ] TASK-{tid}", content)
                         w.content = content
-                        log(
-                            f"Sanitized TASKS.md: Prevented agent from prematurely marking TASK-{tid} as [x]",
-                            "WARN",
-                            tid,
-                        )
+                        log(f"Sanitized TASKS.md: Prevented premature task closure for TASK-{tid}", "WARN", tid)
 
             dest = ROOT / w.path
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -153,7 +148,8 @@ class Router:
         profile = self.agent_registry.profiles.get(agent_name, default_profile)
 
         session_data = self.session.read()
-        prompt = self.builder.build(agent_name, profile, task_desc, session_data)
+        # ARCHITECT FIX: Added missing 'current_state' argument to builder.build()
+        prompt = self.builder.build(agent_name, profile, task_desc, session_data, current_state)
 
         response_model = self.RESPONSE_MODELS.get(agent_name)
         log(f"Calling {agent_name} (Mode: {'Structured' if response_model else 'Legacy XML'})", "INFO", tid)
@@ -169,7 +165,7 @@ class Router:
 
             if response_model and not isinstance(ai_resp, str):
                 match ai_resp:
-                    case QueenResponse(updated_tasks=tasks):
+                    case QueenResponse() as q_resp:
                         original_content = self.tasks.path.read_text(encoding="utf-8")
                         user_match = re.search(r"(?s)^(.*?)\n---\n", original_content)
                         if not user_match:
@@ -178,11 +174,14 @@ class Router:
                         user_section = user_match.group(1).strip() if user_match else original_content.strip()
 
                         md_lines = [user_section, "", "---", "", "## [AGENT_PROGRESS]"]
-                        for t in tasks:
+                        for t in q_resp.updated_tasks:
                             icon = "[x]" if t.status == "completed" else "[ ]"
-                            md_lines.append(f"- {icon} TASK-{t.id}: {t.description.strip()}[attempts: {t.attempts}]")
+                            md_lines.append(f"- {icon} TASK-{t.id}: {t.description.strip()} [attempts: {t.attempts}]")
 
                         writes.append(FileWrite(path="agent_context/TASKS.md", content="\n".join(md_lines) + "\n"))
+
+                        if hasattr(q_resp, "thought") and q_resp.thought:
+                            self.session.write_action_log(f"[STRATEGY thought]\n{q_resp.thought}")
 
                         if tid and tid.startswith("GOAL-"):
                             fb = self.session.read().get("FEEDBACK", "")
@@ -221,7 +220,7 @@ class Router:
             if self.halt.is_halted():
                 return {"error": "SECURITY_HALT"}
 
-            if current_state == "PLANNING" and writes_count == 0:
+            if current_state == "STRATEGY" and writes_count == 0:
                 return {"error": "POLICY_VIOLATION: No task updates proposed."}
 
             combined_skills = "".join(skill_results)
@@ -299,7 +298,7 @@ class Router:
                     log(f"Failed to push meta-state: {e}", "WARN", tid)
 
     def run_pipeline(self) -> None:
-        """Main autonomous loop with refined semantic state management."""
+        """Main autonomous loop with adaptive delays and merged states."""
         log("Pipeline Started", "PIPELINE")
         wf = self.orch_config.workflow_global
         local_wf = self.orch_config.workflow_local
@@ -334,8 +333,7 @@ class Router:
                     continue
 
             stages = [
-                ("ANALYSE", "queen"),
-                ("PLANNING", "queen"),
+                ("STRATEGY", "queen"),
                 ("EXECUTING", "developer"),
                 ("LINTING", "pedant"),
                 ("TESTING", "developer"),
@@ -357,10 +355,11 @@ class Router:
                 if success_marker in action_log and not is_synth:
                     continue
 
-                if is_synth and state not in {"ANALYSE", "PLANNING"}:
+                if is_synth and state != "STRATEGY":
                     continue
 
                 self.session.write_state(state, tid)
+                delay_after_stage = wf.loop_delay_seconds.value if conf.requires_llm.value else 0.1
 
                 match state:
                     case "VCS_DELIVERY":
@@ -379,19 +378,19 @@ class Router:
                         else:
                             log("Dumb Pedant found complex errors. Escalating to AI...", "WARN", tid)
                             self.session.write_action_log(f"Dumb Pedant Error:\n{out[:250]}...")
-                            res = self.run_agent(agent, task["description"], state, tid)
+                            res = self.run_agent(agent, task.get("description", ""), state, tid)
                             success = "error" not in res
+                            delay_after_stage = wf.loop_delay_seconds.value
 
                     case "VERIFYING":
                         # ARCHITECT FIX: Targeted Pre-flight Compression
                         log("Compressing context before Verifying (Pre-flight)...", "INFO", tid)
                         self._run_skill_process("context-compressor", {}, tid)
-
-                        res = self.run_agent(agent, task["description"], state, tid)
+                        res = self.run_agent(agent, task.get("description", ""), state, tid)
                         success = "error" not in res
 
                     case _:
-                        res = self.run_agent(agent, task["description"], state, tid)
+                        res = self.run_agent(agent, task.get("description", ""), state, tid)
                         success = "error" not in res
 
                 if not success:
@@ -419,10 +418,13 @@ class Router:
                                 new_tag = f"REVERTED:{s_rev}:{tid}"
                                 action_log_curr = action_log_curr.replace(old_tag, new_tag)
 
+                            action_log_curr += "\n\n--- NEW ATTEMPT (PREVIOUS FAILURE DETECTED) ---\n"
+
                             s["ACTION_LOG"] = action_log_curr
                             self.session._write_all(s)
 
                         task_success = False
+                        time.sleep(delay_after_stage)
                         break
 
                     self.tasks.increment_attempts(tid, str(res.get("error", "Max retries")))
@@ -431,6 +433,7 @@ class Router:
                     return
 
                 self.session.write_action_log(f"STAGE_SUCCESS:{state}:{tid}")
+                time.sleep(delay_after_stage)
 
             if task_success:
                 if not task.get("is_synthetic"):
@@ -440,9 +443,5 @@ class Router:
 
             self._sync_vcs_state(tid)
 
-            if task_success:
-                if not wf.loop_mode.value:
-                    break
-                time.sleep(wf.loop_delay_seconds.value)
-            else:
-                time.sleep(wf.loop_delay_seconds.value)
+            if not task_success and not wf.loop_mode.value:
+                break

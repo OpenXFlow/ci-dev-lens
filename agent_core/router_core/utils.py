@@ -3,12 +3,18 @@
 # Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
-"""agent_core/router_core/utils.py - Shared utilities and loaders (v 1.7 Pydantic + Structlog)."""
+"""
+agent_core/router_core/utils.py (v 1.10)
+Shared utilities and system configuration loaders.
+Fixed: linter rule loading now logs errors if pyproject.toml is missing/empty.
+"""
 
 import json
 import logging
 import shutil
+import tomllib  # Standard library in Python 3.12
 from pathlib import Path
+from typing import cast
 
 import structlog
 
@@ -20,7 +26,7 @@ ROOT = Path(__file__).parent.parent.parent.resolve()
 # Dynamic detection of 'uv'
 UV_PATH = shutil.which("uv") or "uv"
 
-# Updated MOCK Responses to match E2E Reference files and parser rules
+# Updated MOCK Responses
 DEFAULT_MOCK_RESPONSES = {
     "queen": (
         "MOCK: Queen planning complete.\n"
@@ -31,7 +37,7 @@ DEFAULT_MOCK_RESPONSES = {
         "---\n\n"
         "## [AGENT_PROGRESS]\n"
         "- [x] TASK-000: System initialization [attempts: 0]\n"
-        "- [ ] TASK-001: Implement Palindrome logic and tests [attempts: 0]\n"
+        "- [ ] TASK-001: Implement Palindrome logic and tests[attempts: 0]\n"
         "</file_write>"
     ),
     "developer": (
@@ -74,20 +80,19 @@ def _setup_logger() -> structlog.BoundLogger:
             processors = [
                 structlog.processors.TimeStamper(fmt="%H:%M:%S", utc=False),
                 structlog.processors.add_log_level,
-                # CHIRURGICKÁ OPRAVA: Filtrovanie kľúčov pomocou lambda procesora (oprava AttributeError)
                 lambda _, __, ed: {k: v for k, v in ed.items() if k not in ("tid", "internal_level")},
                 structlog.dev.ConsoleRenderer(colors=True, exception_formatter=structlog.dev.plain_traceback),
             ]
 
         structlog.configure(
-            processors=processors,
+            processors=processors,  # type: ignore[arg-type]
             wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
             logger_factory=structlog.PrintLoggerFactory(),
             cache_logger_on_first_use=True,
         )
         _logger_configured = True
 
-    return structlog.get_logger()
+    return cast(structlog.BoundLogger, structlog.get_logger())
 
 
 def log(msg: str, level: str = "INFO", tid: str | None = None) -> None:
@@ -97,7 +102,6 @@ def log(msg: str, level: str = "INFO", tid: str | None = None) -> None:
 
     icons = {"INFO": "ℹ️ ", "OK": "✅", "WARN": "⚠️ ", "ERROR": "❌", "STATE": "🔄", "PIPELINE": "🚀"}  # noqa: RUF001
 
-    # Format human-readable message for Console
     formatted_msg = msg
     if env.CI_MODE != "github":
         task_prefix = ""
@@ -111,10 +115,8 @@ def log(msg: str, level: str = "INFO", tid: str | None = None) -> None:
         icon = icons.get(level, "  ")
         formatted_msg = f"{task_prefix}{icon} {msg}"
 
-    # Bind metadata (will be hidden in Console by lambda, but present in JSON)
     bound_logger = logger.bind(tid=str(tid) if tid else None, internal_level=level)
 
-    # Log based on severity
     if level == "ERROR":
         bound_logger.error(formatted_msg)
     elif level == "WARN":
@@ -160,6 +162,27 @@ def load_agents_registry() -> AgentsRegistryModel:
     with registry_path.open(encoding="utf-8") as f:
         data = json.load(f)
         return AgentsRegistryModel.model_validate(data)
+
+
+def load_linter_rules() -> str:
+    """Extracts Ruff and Mypy rules from pyproject.toml for AI context."""
+    toml_path = ROOT / "pyproject.toml"
+    if not toml_path.exists():
+        log("pyproject.toml not found!", "ERROR")
+        return "ERROR: pyproject.toml missing."
+
+    with toml_path.open("rb") as f:
+        config = tomllib.load(f)
+
+    tool_config = config.get("tool", {})
+    ruff = tool_config.get("ruff", {})
+    mypy = tool_config.get("mypy", {})
+
+    if not ruff and not mypy:
+        log("No linting rules found in pyproject.toml!", "WARN")
+        return "WARNING: Linting configuration empty."
+
+    return f"RUFF_CONFIG: {json.dumps(ruff, indent=2)}\nMYPY_CONFIG: {json.dumps(mypy, indent=2)}"
 
 
 def count_tokens(text: str) -> int:

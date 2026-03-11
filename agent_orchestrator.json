@@ -1,5 +1,5 @@
 {
-  "version": "1.4",
+  "version": "1.5",
   "workflow_global": {
     "ci_mode": {
       "value": "local",
@@ -11,7 +11,7 @@
     },
     "loop_delay_seconds": {
       "value": 5,
-      "description": "Cooldown period between tasks to prevent LLM API rate-limiting (HTTP 429)."
+      "description": "Cooldown period between LLM tasks to prevent API rate-limiting (HTTP 429)."
     },
     "max_task_attempts": {
       "value": 3,
@@ -23,33 +23,35 @@
     }
   },
   "workflow_local": {
-    "ANALYSE": {
-      "active": { "value": true , "description": "Diagnostic phase: Agent assesses the codebase and requirements." },
-      "max_retries": { "value": 3 }
-    },
-    "PLANNING": {
-      "active": { "value": true, "description": "Architectural phase: Goal is decomposed into atomic tasks in TASKS.md." },
-      "max_retries": { "value": 3 }
+    "STRATEGY": {
+      "active": { "value": true, "description": "Combined Analysis + Planning. Queen assesses codebase AND generates task breakdown in one LLM call." },
+      "max_retries": { "value": 3 },
+      "requires_llm": { "value": true, "description": "Calls LLM (Mistral) API. Enforces token budget checks and 5s cooldown delay." }
     },
     "EXECUTING": {
       "active": { "value": true, "description": "Implementation phase: Coding and initial unit test generation." },
-      "max_retries": { "value": 3 }
+      "max_retries": { "value": 3 },
+      "requires_llm": { "value": true, "description": "Calls LLM (Groq) API. Enforces token budget checks and 5s cooldown delay." }
     },
     "LINTING": {
-      "active": { "value": true , "description": "Static analysis: Enforcing PEP8, type hints, and code cleanliness." },
-      "max_retries": { "value": 5 }
+      "active": { "value": true, "description": "Static analysis: Enforcing PEP8, type hints, and code cleanliness (Dumb Pedant + LLM Fallback)." },
+      "max_retries": { "value": 5 },
+      "requires_llm": { "value": false, "description": "Runs local Ruff subprocess. Bypasses token checks and uses 0.1s adaptive delay unless fallback triggered." }
     },
     "TESTING": {
-      "active": { "value": true , "description": "Logic verification: Running the pytest suite against the implementation." },
-      "max_retries": { "value": 3 }
+      "active": { "value": true, "description": "Logic verification: Running the pytest suite against the implementation." },
+      "max_retries": { "value": 3 },
+      "requires_llm": { "value": false, "description": "Runs local Pytest subprocess. Bypasses token checks and uses 0.1s adaptive delay." }
     },
     "VERIFYING": {
-      "active": { "value": true , "description": "Security & QA audit: Final check for secrets and quality patterns." },
-      "max_retries": { "value": 3 }
+      "active": { "value": true, "description": "Security & QA audit: Final check for secrets and quality patterns. Runs Pre-flight Context Compressor first." },
+      "max_retries": { "value": 3 },
+      "requires_llm": { "value": true, "description": "Calls LLM (Mistral) API. Enforces token budget checks and 5s cooldown delay." }
     },
     "VCS_DELIVERY": {
-      "active": { "value": true , "description": "Final stage: Executes git operations and cloud integration based on vcs_control." },
-      "max_retries": { "value": 2 }
+      "active": { "value": false, "description": "Final stage: Executes git operations and cloud integration based on vcs_control." },
+      "max_retries": { "value": 2 },
+      "requires_llm": { "value": false, "description": "Runs local Git and GitHub API. Bypasses LLM token checks and uses 0.1s adaptive delay." }
     }
   },
   "vcs_control": {
@@ -60,8 +62,14 @@
     "github_settings": {
       "auto_push": { "value": true, "description": "Push the feature branch to remote origin after verification." },
       "auto_pr": { "value": true, "description": "Create a Pull Request automatically using the GitHub REST API." },
-      "watch_gha": { "value": true, "description": "Wait for cloud tests to pass before marking the GOAL as completed. Ensures code works in production env. GitHub Actions" },
-      "gha_timeout_minutes": { "value": 10, "description": "Safety limit: If cloud tests run longer than this (in minutes), the task is marked as failed to prevent infinite waiting." }
+      "watch_gha": { 
+        "value": true, 
+        "description": "Wait for cloud tests to pass before marking the GOAL as completed. Ensures code works in production env. GitHub Actions" 
+      },
+      "gha_timeout_minutes": { 
+        "value": 15, 
+        "description": "Safety limit: If cloud tests run longer than this (in minutes), the task is marked as failed to prevent infinite waiting." 
+      }
     },
     "local_git_settings": {
       "auto_commit": { "value": true, "description": "Automatically perform a git commit after each successful TASK." },
