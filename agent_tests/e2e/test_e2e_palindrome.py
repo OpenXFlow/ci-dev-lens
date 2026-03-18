@@ -4,8 +4,8 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-agent_tests/e2e/test_e2e_palindrome.py - E2E Verification of the Palindrome Flow (v 1.8)
-Updated to support STRATEGY phase and requires_llm configuration.
+agent_tests/e2e/test_e2e_palindrome.py - E2E Verification of the Palindrome Flow (v 1.10)
+Updated to support max_execution_logs config parameter.
 """
 
 import json
@@ -37,13 +37,13 @@ def test_palindrome_e2e_flow(tmp_project: Path, monkeypatch: pytest.MonkeyPatch)
         "- [ ] GOAL-001: Create a Palindrome checker.\n\n"
         "---\n\n"
         "## [AGENT_PROGRESS]\n"
-        "- [x] TASK-000: System initialization [attempts: 0]\n",
+        "- [x] TASK-000: System initialization[attempts: 0]\n",
         encoding="utf-8",
     )
 
-    # 3. Inject Valid Orchestrator Config (Matching v1.5 Schema)
+    # 3. Inject Valid Orchestrator Config
     valid_config = {
-        "version": "1.5",
+        "version": "1.6",
         "workflow_global": {
             "ci_mode": {"value": "local"},
             "loop_mode": {"value": True},
@@ -81,7 +81,18 @@ def test_palindrome_e2e_flow(tmp_project: Path, monkeypatch: pytest.MonkeyPatch)
             "retry_backoff_factor": {"value": 1.5},
             "fallback_matrix": {},
         },
-        "memory_management": {"yellow_zone_threshold": {"value": 0.7}, "red_zone_threshold": {"value": 0.9}},
+        "memory_management": {
+            "yellow_zone_threshold": {"value": 0.7},
+            "red_zone_threshold": {"value": 0.9},
+        },
+        "memory_engine": {
+            "enabled": {"value": True},
+            "db_path": {"value": ":memory:"},
+            "max_reflections": {"value": 100},
+            "max_execution_logs": {"value": 2000},
+            "fts_result_limit": {"value": 10},
+            "vacuum_on_purge": {"value": False},
+        },
         "logging": {"show_task_id": {"value": True}, "verbosity": {"value": "INFO"}},
     }
     config_path.write_text(json.dumps(valid_config), encoding="utf-8")

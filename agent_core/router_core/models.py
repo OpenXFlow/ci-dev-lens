@@ -4,9 +4,10 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-agent_core/router_core/models.py (v 1.9)
-Pydantic schemas for orchestrator configuration.
-Fixed ANN401 linting violations on model_validator.
+agent_core/router_core/models.py (v 1.13)
+Pydantic schemas for orchestrator configuration and state validation.
+Added ExecutionLogEntry and max_execution_logs (ACMI Blueprint v3.2).
+Surgical Patch (v1.13): Added Token Telemetry fields to ExecutionLogEntry.
 """
 
 from typing import Any
@@ -188,6 +189,17 @@ class MemoryManagementConfig(BaseModel):
     red_zone_threshold: SettingValueFloat
 
 
+class MemoryEngineConfig(BaseModel):
+    """Settings for the SQLite Memory Engine and RAG."""
+
+    enabled: SettingValueBool
+    db_path: SettingValueStr
+    max_reflections: SettingValueInt
+    max_execution_logs: SettingValueInt
+    fts_result_limit: SettingValueInt
+    vacuum_on_purge: SettingValueBool
+
+
 class LoggingConfig(BaseModel):
     """Logging verbosity settings."""
 
@@ -204,4 +216,24 @@ class OrchestratorConfigModel(BaseModel):
     vcs_control: VCSControlConfig
     resilience: ResilienceConfig
     memory_management: MemoryManagementConfig
+    memory_engine: MemoryEngineConfig
     logging: LoggingConfig
+
+
+# ==========================================
+# 6. EXECUTION MODELS (Memory Engine)
+# ==========================================
+class ExecutionLogEntry(BaseModel):
+    """Schema for validating skill execution logs before database insertion."""
+
+    task_id: str = Field(description="The ID of the task being executed.")
+    stage: str = Field(description="The current pipeline stage (e.g., LINTING, TESTING).")
+    tool: str = Field(description="The name of the tool executed (e.g., ruff, pytest).")
+    result: str = Field(description="The outcome of the execution (e.g., PASS, FAIL, ERROR).")
+    output: str = Field(description="The raw standard output and error log.")
+    duration_ms: int = Field(description="Execution time in milliseconds.")
+    attempt: int = Field(description="The current retry attempt number for this stage.")
+    provider: str = Field(default="", description="The LLM provider name (e.g., groq, mistral).")
+    tokens_used: int = Field(default=0, description="Total tokens consumed by the call.")
+    tokens_prompt: int = Field(default=0, description="Tokens used in the prompt.")
+    tokens_completion: int = Field(default=0, description="Tokens used in the completion.")

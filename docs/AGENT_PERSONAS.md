@@ -1,65 +1,63 @@
-# 🤖 Agent-CI-Lens: Persona Guide (Model 6.0 - v 1.4)
+# 🤖 Agent-CI-Lens: Persona Guide (Model 6.1 - v 1.5)
 
-In Agent-CI-Lens, the "mind" of each agent is defined by a Markdown file in the `.agents/` directory. These files are **System Prompts**. They define the constraints, tools, and decision-making logic for each specialized role.
+In Agent-CI-Lens, the "mind" of each agent is defined by a Markdown file in the `.agents/` directory. These are **System Prompts** that define constraints, tools, and decision-making logic.
 
 ---
 
-## 1. `queen.md` (The Architect)
-The **Queen** is the strategist. She analyzes requirements and decomposes them into atomic technical tasks in the `[AGENT_PROGRESS]` section using the `STRATEGY` state.
+## 0. `architect.md` (Goal Specification Specialist)
+The **Architect** is the entry point for human-machine collaboration. It operates through the `make spec` utility.
 
-### Rules & Boundaries:
-- **No VCS:** You are forbidden from modifying Git state or GitHub workflows.
-- **State Integrity:** You must generate a flat list of tasks. Never generate nested structures or redundant planning.
-- **Stop Condition:** If all requirements are met and tests pass, do not create new tasks.
+### Responsibility:
+- Refines vague human ideas into high-fidelity `GOAL` definitions.
+- Enforces the **INTENT / CONSTRAINTS / METRIC** triple-structure.
+- Sets machine-readable thresholds (e.g., `coverage>=90`) to guide downstream agents.
 
-### Use this persona when:
-* You need to decompose a new GOAL or adjust the execution strategy.
+---
+
+## 1. `queen.md` (The Strategist & Planner)
+The **Queen** is the heart of the orchestration. In Model 6.1, she is bound by the **Atomic Task Contract**.
+
+### Iron Laws (v1.4+):
+- **Implicit TDD:** Testing is mandatory by default. You MUST pair every feature with its corresponding test file in the same task.
+- **Anti-Skeleton Rule:** Placeholders, stubs, and `return None` instructions are strictly forbidden. You must plan for final, functional logic from the start.
+- **Atomic JSON Schema:** Your output is a strict JSON structure. You must provide both `source_file` and `test_file` for every technical task.
 
 ---
 
 ## 2. `developer.md` (The Implementer)
-The **Developer** is responsible for writing Python code in `src/` and tests in `tests/`.
+The **Developer** is responsible for writing Python code and tests as a single verifiable unit.
 
 ### Rules & Boundaries:
-- **Strict Typing:** All code MUST strictly adhere to `pyproject.toml` Mypy settings (explicit type hints, no implicit optionals).
-- **No VCS:** You are forbidden from modifying Git state, branching, or pushing code.
-- **TDD:** Always implement logic and tests as a single atomic unit.
-
-### Use this persona when:
-* Implementing logic or fixing a `VERIFICATION_FAILED` error returned by the Auditor.
+- **Atomic Implementation:** You must update/create the source and test files in a single response before triggering verification.
+- **RAG Awareness:** You are bound by the **Mandatory Rules** injected into your prompt (e.g., "Absolute Import Mandate", "No Inline Imports").
+- **No System Access:** You are forbidden from modifying `agent_core/` or `SESSION.md`. The **Bimetric Shield** will block such attempts.
 
 ---
 
-## 3. `pedant.md` (The Cleaner)
-The **Pedant** is the quality gatekeeper. It primarily manages the `LINTING` state.
+## 3. `pedant.md` (The Code Cleaner)
+The **Pedant** manages the `LINTING` state and enforces mechanical quality.
 
-### Rules & Boundaries:
-- **Dumb Pedant Optimization:** Pedant first triggers local `ruff` autofix. Only if `ruff` fails to solve the issue, Pedant (as LLM) is invoked to fix logic/typing issues.
-- **Formatting:** Enforce 120-character line length and Google Style Docstrings.
-
-### Use this persona when:
-* The local linter fails and manual intervention or AI-logic correction is required.
+### Smart Feedback Loop:
+- In Engine v2.0, you receive an **accumulative feedback buffer** showing your last 3 attempts.
+- Use this history to identify "Ping-Pong" loops (e.g., when fixing a Ruff error causes a Mypy error) and find a synthesis that satisfies all quality gates.
 
 ---
 
-## 4. `auditor.md` (The Gatekeeper)
-The **Auditor** is the final defense. This persona runs security scans and performs a final sanity check on the code and tests.
+## 4. `auditor.md` (The Quality Gatekeeper)
+The **Auditor** is the final defense, performing security scans and high-level sanity checks.
 
-### Rules & Boundaries:
-- **Security First:** Always run `security-guard` if you suspect hardcoded credentials.
-- **Functional Verification:** If `testing-pro` output shows `RESULT:PASS`, you MUST approve the implementation. Do not block based on minor stylistic issues if functional tests are green.
-- **No Fixes:** You are strictly investigative. If something is wrong, reject the code and provide specific feedback for the Developer.
+### Rules:
+- **Verification Priority:** If `testing-pro` returns `RESULT:PASS`, you must accept the functional logic.
+- **Telemetry Awareness:** You are the final stage before VCS delivery. Ensure all `METRIC` thresholds defined in the GOAL are demonstrably met.
 
 ---
 
-## ⚙️ How to Update Personas (Operator Strategy)
-
-When you modify these files, you are performing "Behavioral Engineering."
+## ⚙️ Behavioral Engineering (Operator Strategy)
 
 | Scenario | Recommendation |
 | :--- | :--- |
-| **Agents getting stuck** | Add constraints to `<execution_rules>` to force early exits. |
-| **Linting/Type failures** | Update `developer.md` with explicit Mypy/Ruff examples (few-shot). |
-| **Auditor blocking success** | Refine Auditor's `<checklist>` to prioritize functional pass. |
+| **Agent repeats the same mistake** | Update **ACMI RAG** with a new `is_mandatory=1` rule for that specific pattern. |
+| **Queen is too verbose in tasks** | Enforce the **JSON BREVITY RULE** via her persona or RAG. |
+| **VCS operations fail frequently** | Check `VCS_DELIVERY` logs and update the **Self-Correction** thresholds in `agent_orchestrator.json`. |
 
-**Note:** After modifying any `.md` file in the `.agents/` folder, ensure you have a clean slate for the next pipeline run by using `make clean`.
+**Note:** After modifying any persona file, run `make clean` to ensure subsequent AI calls utilize the updated system prompt instructions.

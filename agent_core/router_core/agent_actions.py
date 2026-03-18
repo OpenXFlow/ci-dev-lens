@@ -3,7 +3,7 @@
 # Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 
-"""agent_core/router_core/agent_actions.py - Structured schemas for AI responses (v 1.0)."""
+"""agent_core/router_core/agent_actions.py - Structured schemas for AI responses (v 1.1)."""
 
 from pydantic import BaseModel, Field
 
@@ -31,11 +31,14 @@ class SkillCall(BaseModel):
 # ==========================================
 
 
-class TechnicalTask(BaseModel):
-    """Represents a single technical unit of work in TASKS.md."""
+class AtomicTask(BaseModel):
+    """Represents a single atomic unit of work (Test + Implementation) enforcing the TDD contract."""
 
     id: str = Field(description="3-digit ID, e.g., '001'.")
-    description: str = Field(description="Detailed technical instruction for the task.")
+    title: str = Field(description="Short summary of the feature.")
+    source_file: str = Field(description="Path to the src/ file being created or modified.")
+    test_file: str = Field(description="Path to the tests/ file being created or modified.")
+    description: str = Field(description="Detailed technical instruction for the logic and test cases.")
     status: str = Field(default="pending", description="Status: 'pending', 'completed', or 'blocked'.")
     attempts: int = Field(default=0, description="Current attempt count.")
 
@@ -44,7 +47,7 @@ class QueenResponse(BaseModel):
     """Structured response for the Architect (Queen)."""
 
     thought: str = Field(description="Internal reasoning and strategic analysis.")
-    updated_tasks: list[TechnicalTask] = Field(description="The complete list of technical tasks for [AGENT_PROGRESS].")
+    updated_tasks: list[AtomicTask] = Field(description="The complete list of technical tasks for [AGENT_PROGRESS].")
 
 
 class DeveloperResponse(BaseModel):

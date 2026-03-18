@@ -1,100 +1,72 @@
-# ⚙️ Agent-CI-Lens: Configuration Guide (Model 6.0)
+# ⚙️ Agent-CI-Lens: Configuration Guide (Model 6.1)
 
-This document provides a detailed technical breakdown of the configuration files that govern the Agent-CI-Lens orchestrator.
+This document provides a detailed technical breakdown of the configuration files governing the Agent-CI-Lens orchestrator.
 
 ---
 
 ## 1. `agent_orchestrator.json` (System Control)
-Located in the project root, this file acts as the "Command Center." It defines how the pipeline behaves, handles errors, and manages memory.
-
-### Workflow Global (`workflow_global`)
-*   **`ci_mode`**: Sets the execution target. `local` for manual dev work; `github` for automated cloud integration.
-*   **`loop_mode`**: When `true`, the orchestrator automatically starts the next goal in the `USER_QUEUE` upon success.
-*   **`loop_delay_seconds`**: (Critical) The wait time between API-intensive tasks. Set this to `5` or higher when using free tiers to prevent **HTTP 429 Rate Limit** errors.
-*   **`max_task_attempts`**: The master circuit breaker. If a task fails 3 times across all stages, it is marked as `[BLOCKED]`.
+The "Command Center" managing pipeline behavior, resilience, and memory.
 
 ### Workflow Local (`workflow_local`)
-Manages individual stages. For Model 6.0+, `ANALYSE` and `PLANNING` are merged into `STRATEGY`.
-*   **`active`**: Toggles the stage on or off.
-*   **`max_retries`**: How many times an agent can attempt to fix its own errors within that specific stage.
-*   **`requires_llm`**:
-    *   If `true` (e.g., `STRATEGY`, `EXECUTING`), the stage involves an LLM call. The system enforces the full `loop_delay_seconds` cooldown.
-    *   If `false` (e.g., `LINTING`, `TESTING`), the stage runs locally. The system uses a fast **0.1s adaptive delay**.
-*   **`pause_after`**: If `true`, the engine stops after this stage and waits for the operator to run `make pipeline` again.
+Governs individual stage execution.
+*   **`requires_llm`**: (Critical for Engine v2.0)
+    *   `true`: Stage invokes an LLM agent (e.g., `STRATEGY`, `EXECUTING`). Enforces full cooldown delay.
+    *   `false`: Stage runs as a pure local subprocess (e.g., `TESTING`). Bypasses LLM tokens and uses 0.1s adaptive delay.
+*   **`max_retries`**: Number of self-correction attempts per stage. `LINTING` is typically set higher (5) to allow for iterative formatting.
 
-### VCS Control (`vcs_control`)
-*   **`mode`**: The default delivery strategy. It is highly recommended to set this to `local_git` for safe, local-only development.
-*   **`branch_per_goal`**: If `true`, the system automatically creates a dedicated feature branch (e.g., `feat/GOAL-001`) to isolate work and protect the `main` branch.
+### Memory Engine (`memory_engine`)
+*   **`enabled`**: Toggle for the SQLite-based ACMI system.
+*   **`max_execution_logs`**: (New) Defines the retention policy for the `execution_logs` table (default: 2000). Older records are auto-pruned during `make purge`.
+*   **`max_reflections`**: Limit for AI-learned lessons in the database.
 
 ### Resilience (`resilience`)
-*   **`smart_fallback`**: When `true`, if a primary API provider (e.g., Groq) fails, the system automatically redirects the request to a backup provider defined in the matrix.
-*   **`fallback_matrix`**: Defines the backup model for each provider. Example: If `GROQ` fails, the system switches to `MISTRAL` using the `mistral-large-latest` model.
-
-### Memory Management (`memory_management`)
-*   **`yellow_zone_threshold`**: (0.0 - 1.0) Percentage of context window usage that triggers the `context-compressor` to prune the `ACTION_LOG`.
-*   **`red_zone_threshold`**: (0.0 - 1.0) Critical limit that triggers an emergency **HALT** to prevent data loss or model confusion.
+*   **`smart_fallback`**: Automated provider switching (e.g., Groq -> Mistral) upon 429 Rate Limits.
+*   **`fallback_matrix`**: Map of primary providers to their respective backup models and providers.
 
 ---
 
 ## 2. `.agents/agent_registry.json` (Agent DNA)
-This file is the "Registry" of all AI workers. It defines their "brains" and the tools they are allowed to use.
+Defines the specialized profiles for AI workers.
 
-### Profile Settings
-*   **`role`**: Descriptive name of the agent's purpose.
-*   **`model`**: The specific LLM ID (e.g., `llama-3.3-70b-versatile` or `mistral-large-latest`).
-*   **`provider`**: The identifier used to find API keys in `.env`. Thanks to our **Smart Parser**, you can add any provider (e.g., `OLLAMA`) here as long as `{PROVIDER}_API_KEY` exists in `.env`.
-*   **`temperature`**: (0.0 - 2.0) Sets the creativity level. `0.0` is recommended for Pedant/Auditor for deterministic results.
-*   **`max_tokens`**: The maximum response size allowed for the agent.
-*   **`allowed_skills`**: A whitelist of capabilities (e.g., `testing-pro`, `quality-gate`) the agent is authorized to invoke.
+*   **`architect`**: Specialized in goal refinement (INTENT/CONSTRAINTS/METRIC).
+*   **`queen`**: Orchestrator for Atomic Task decomposition.
+*   **`developer`**: The primary implementer (Python/Pytest).
+*   **`auditor`**: Security and quality gatekeeper.
+*   **`pedant`**: Formatting and Linter specialist.
 
----
-
-## 3. `pyproject.toml` (Quality Gates & Standards)
-This file configures the Python toolchain and defines the strictness of the "Quality Gates."
-
-### Toolchain (`[project]` & `[dependency-groups]`)
-*   The system uses **`uv`** exclusively.
-*   **Dependencies**: Includes `pydantic` for schema validation and `httpx` + `stamina` for resilient API communication.
-*   **Dev Groups**: Tools like `ruff`, `mypy`, and `pytest` are pinned here to ensure agents use the same versions as the operator.
-
-### Ruff: Tier 1 Gate (Mechanical Integrity)
-*   **`line-length = 120`**: Sets the maximum line length to 120 characters, a modern standard suitable for complex codebases.
-*   **`select`**: Enables specific rules. We use `ANN` (Type Hints), `D` (Docstrings), `S` (Security), and `TRY` (Exception handling).
-*   **`convention = "google"`**: Forces agents to write documentation in the standard Google Style.
-*   **`per-file-ignores`**: Disables documentation (`D`) and annotation (`ANN`) rules for `tests/` and `agent_tests/` folders to prioritize execution speed over test verbosity.
-
-### Mypy: Tier 2 Gate (Logical Integrity)
-*   **`disallow_untyped_defs = true`**: Forces the Developer agent to provide Type Hints for every function.
-*   **`strict_equality = true`**: Prevents logic bugs where different types are compared (e.g., `string == int`).
-*   **`overrides`**: Allows for granular rule adjustments. We use it to disable the `method-assign` error code in test files (`agent_tests.*`), which is a common and safe pattern when mocking with `unittest.mock`.
+**New in 6.1:** Usage of `max_tokens=500` for the Auditor is recommended to optimize speed and cost for binary (PASS/FAIL) decisions.
 
 ---
 
-## 4. `.env` (Secrets & Environment Overrides)
-Located in the project root, the `.env` file is strictly ignored by Git. It is the only place where private credentials and environment-specific toggles should reside.
+## 3. `agent_core/router_core/models.py` (Validation Layer)
+Model 6.1 hardens the data layer using Pydantic V2.
 
-### System Control (Simulation)
-*   **`MOCK`**: (`true`/`false`) If `true`, the orchestrator uses predefined mock responses instead of calling real LLM APIs. Essential for cost-free testing.
-*   **`GHA_MOCK_RESULT`**: (`success`/`failure`) Determines the outcome of simulated GitHub Actions when `MOCK=true`.
+### `ExecutionLogEntry` (Telemetry Model)
+Every agent call is validated against this schema before DB insertion:
+*   **`provider`**: Stores the LLM provider (e.g., `groq`, `mistral`, `local_skill`).
+*   **`tokens_prompt` / `tokens_completion`**: Granular tracking of input vs. output.
+*   **`tokens_used`**: Total consumption for ROI calculation.
+*   **`duration_ms`**: Latency tracking for performance audits.
 
-### Dynamic API Credentials (The Smart Parser)
-Model 6.0+ uses a **Smart Parser** to load credentials, allowing for flexible provider integration.
+---
 
-*   **`{PROVIDER}_API_KEY`**: The API key for a specific service.
-    *   *Example:* `GROQ_API_KEY`, `OPENAI_API_KEY`, `LOCAL_API_KEY`.
-    *   The `{PROVIDER}` prefix must match the `provider` field in `agent_registry.json` (case-insensitive).
-*   **`{PROVIDER}_BASE_URL`**: (Optional) The custom endpoint for the provider.
-    *   Essential for local models (e.g., `OLLAMA_BASE_URL=http://localhost:11434/v1`).
-    *   Used for regional endpoints or API proxies.
+## 4. `.env` (Secrets & Dynamic Provisioning)
+The orchestrator uses a **Smart Parser** for environment variables.
 
-### Advanced Credential Features
-#### 1. Key Rotation (High Availability)
-The orchestrator supports **comma-separated keys** for any provider to prevent downtime due to rate limits.
-*   *Example:* `GROQ_API_KEY=key_one,key_two,key_three`
-*   If the first key returns an **HTTP 429 (Rate Limit)** or **401 (Unauthorized)** error, the system automatically rotates to the next key in the list.
+### Key Rotation & Fallbacks
+*   **Multi-Key Support:** `GROQ_API_KEY=key1,key2` enables automatic rotation if `key1` hits a rate limit.
+*   **Custom Base URLs:** `{PROVIDER}_BASE_URL` allows integration with local models (Ollama) or API proxies, maintaining OpenAI compatibility.
 
-#### 2. GitHub Integration
-*   **`GITHUB_TOKEN`**: A Personal Access Token (PAT) required for the `git-manager` skill to push code and create Pull Requests when `ci_mode` is set to `github`.
+### Telemetry Support
+The `APIClient` in `llm.py` now includes a cross-provider usage parser. It automatically detects and maps token metadata from:
+1.  **OpenAI-compatible** (Groq, Mistral, Ollama)
+2.  **Anthropic** (input/output tokens mapping)
+3.  **Google Gemini** (usageMetadata mapping)
 
-**Pro-Tip for Developers:** 
-If you add a new API provider (e.g., `DEEPSEEK`), simply add `DEEPSEEK_API_KEY=...` to your `.env` and set `"provider": "deepseek"` in the registry. The Pydantic `EnvConfig` model will automatically detect, validate, and inject the credentials into the `APIClient`.
+---
+
+## 5. ACMI Database (Persistent Rules)
+While not a config file, the `memory.db` file contains the **Mandatory Ruleset**.
+
+*   **`is_mandatory=1`**: Rules with this flag are injected into the prompt regardless of the FTS5 search rank.
+*   **Use Case:** Use this for "Iron Laws" that must never be forgotten (e.g., *Rule 93: Never write to SESSION.md*).

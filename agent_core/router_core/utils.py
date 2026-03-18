@@ -4,9 +4,9 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-agent_core/router_core/utils.py (v 1.10)
+agent_core/router_core/utils.py (v 1.11)
 Shared utilities and system configuration loaders.
-Fixed: linter rule loading now logs errors if pyproject.toml is missing/empty.
+Updated MOCK responses for Bimetric Shield validation.
 """
 
 import json
@@ -26,15 +26,11 @@ ROOT = Path(__file__).parent.parent.parent.resolve()
 # Dynamic detection of 'uv'
 UV_PATH = shutil.which("uv") or "uv"
 
-# Updated MOCK Responses
+# Updated MOCK Responses (Bimetric Shield Ready)
 DEFAULT_MOCK_RESPONSES = {
     "queen": (
         "MOCK: Queen planning complete.\n"
         '<file_write path="agent_context/TASKS.md">\n'
-        "# Agent-CI-Lens TASKS\n\n"
-        "## [USER_QUEUE]\n"
-        "- [ ] GOAL-001: Create a Palindrome checker.\n\n"
-        "---\n\n"
         "## [AGENT_PROGRESS]\n"
         "- [x] TASK-000: System initialization [attempts: 0]\n"
         "- [ ] TASK-001: Implement Palindrome logic and tests[attempts: 0]\n"

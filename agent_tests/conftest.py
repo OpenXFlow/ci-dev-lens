@@ -4,8 +4,8 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-agent_tests/conftest.py - Shared pytest fixtures for Agent-CI-Lens kernel (v 1.4).
-Updated for Model 5.3 file structure (Pydantic).
+agent_tests/conftest.py - Shared pytest fixtures for Agent-CI-Lens kernel (v 1.6).
+Updated to support Milestone 3/4 configuration schemas (max_execution_logs).
 """
 
 import json
@@ -27,8 +27,8 @@ sys.path.insert(0, str(ROOT))
 @pytest.fixture
 def tmp_project(tmp_path: Path) -> Path:
     """
-    Creates a complete temporary project structure using Model 5.3 naming conventions.
-    Used by validator, indexer, router, and skill tests.
+    Creates a complete temporary project structure.
+    Injects a valid agent_orchestrator.json with SQLite pointing to ':memory:'.
     """
     # System directories
     (tmp_path / ".claude" / "cache").mkdir(parents=True)
@@ -36,7 +36,7 @@ def tmp_project(tmp_path: Path) -> Path:
     (tmp_path / ".claude" / "skills").mkdir(parents=True)
     (tmp_path / ".agents").mkdir(parents=True)
 
-    # Model 5.2/5.3 directories
+    # Core directories
     (tmp_path / "agent_context").mkdir(parents=True)
     (tmp_path / "agent_core" / "router_core").mkdir(parents=True)
     (tmp_path / "agent_tests").mkdir(parents=True)
@@ -46,8 +46,8 @@ def tmp_project(tmp_path: Path) -> Path:
     (tmp_path / "src").mkdir(parents=True)
     (tmp_path / "tests").mkdir(parents=True)
 
-    # Mock agent_registry.json (NEW NAME)
-    agents_config = {
+    # Mock agent_registry.json
+    agents_config: dict[str, Any] = {
         "version": "1.0",
         "profiles": {
             "queen": {
@@ -123,8 +123,63 @@ def tmp_project(tmp_path: Path) -> Path:
     # Basic project files
     (tmp_path / "CLAUDE.md").touch()
     (tmp_path / "pyproject.toml").touch()
-    (tmp_path / "agent_orchestrator.json").write_text("{}", encoding="utf-8")  # NEW NAME
     (tmp_path / ".python-version").write_text("3.12", encoding="utf-8")
+
+    # Mock agent_orchestrator.json
+    base_config: dict[str, Any] = {
+        "version": "1.6",
+        "workflow_global": {
+            "ci_mode": {"value": "local"},
+            "loop_mode": {"value": False},
+            "loop_delay_seconds": {"value": 0},
+            "max_task_attempts": {"value": 3},
+            "max_continuous_tasks": {"value": 10},
+        },
+        "workflow_local": {
+            "STRATEGY": {"active": {"value": True}, "max_retries": {"value": 1}, "requires_llm": {"value": True}},
+            "EXECUTING": {"active": {"value": True}, "max_retries": {"value": 1}, "requires_llm": {"value": True}},
+            "LINTING": {"active": {"value": True}, "max_retries": {"value": 1}, "requires_llm": {"value": False}},
+            "TESTING": {"active": {"value": True}, "max_retries": {"value": 1}, "requires_llm": {"value": False}},
+            "VERIFYING": {"active": {"value": True}, "max_retries": {"value": 1}, "requires_llm": {"value": True}},
+            "VCS_DELIVERY": {"active": {"value": False}, "max_retries": {"value": 1}, "requires_llm": {"value": False}},
+        },
+        "vcs_control": {
+            "mode": {"value": "local_git"},
+            "github_settings": {
+                "auto_push": {"value": False},
+                "auto_pr": {"value": False},
+                "watch_gha": {"value": False},
+                "gha_timeout_minutes": {"value": 10},
+            },
+            "local_git_settings": {"auto_commit": {"value": False}, "branch_per_goal": {"value": False}},
+            "local_act_settings": {
+                "workflow_file": {"value": "ci.yml"},
+                "platform": {"value": "ubuntu-latest=catthehacker/ubuntu:act-22.04"},
+            },
+        },
+        "resilience": {
+            "smart_fallback": {"value": False},
+            "http_connect_timeout": {"value": 10.0},
+            "http_read_timeout": {"value": 30.0},
+            "retry_attempts": {"value": 1},
+            "retry_backoff_factor": {"value": 1.0},
+            "fallback_matrix": {},
+        },
+        "memory_management": {
+            "yellow_zone_threshold": {"value": 0.7},
+            "red_zone_threshold": {"value": 0.9},
+        },
+        "memory_engine": {
+            "enabled": {"value": True},
+            "db_path": {"value": ":memory:"},
+            "max_reflections": {"value": 100},
+            "max_execution_logs": {"value": 2000},
+            "fts_result_limit": {"value": 10},
+            "vacuum_on_purge": {"value": False},
+        },
+        "logging": {"show_task_id": {"value": True}, "verbosity": {"value": "DEBUG"}},
+    }
+    (tmp_path / "agent_orchestrator.json").write_text(json.dumps(base_config), encoding="utf-8")
 
     # Mock .env with agnostic keys
     env_content = (
@@ -179,14 +234,9 @@ def tmp_src(tmp_path: Path) -> Path:
 def make_router() -> Callable[..., Any]:
     """
     Factory fixture — returns a function to create a Router configured for the tmp project.
-
-    Usage:
-        def test_logic(make_router: Callable[..., Any], tmp_project: Path) -> None:
-            router = make_router(tmp_project)
     """
 
     def _make_router(project_path: Path, mock: bool = True) -> Any:
-        # We must import inside the fixture to reflect current sys.path
         from agent_core.router_core.engine import Router
         from agent_core.router_core.managers import (
             HaltManager,
@@ -207,7 +257,7 @@ def make_router() -> Callable[..., Any]:
         router.halt = HaltManager()
         router.halt.flag_path = project_path / ".claude" / "cache" / "HALT.flag"
 
-        # Load the mock config from the tmp project (NEW NAME)
+        # Load the mock config from the tmp project
         router.agent_registry = json.loads(
             (project_path / ".agents" / "agent_registry.json").read_text(encoding="utf-8")
         )

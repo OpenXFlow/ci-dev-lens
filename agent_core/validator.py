@@ -4,8 +4,8 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-agent_core/validator.py - Comprehensive System Integrity Shield (v 8.0 Pydantic).
-Refactored to rely on Pydantic schemas for deep validation.
+agent_core/validator.py - Comprehensive System Integrity Shield (v 9.0 Pydantic).
+Refactored to support ACMI (Memory Engine) validation and structure checks.
 """
 
 import sys
@@ -21,7 +21,7 @@ except ImportError:
     sys.path.append(str(Path(__file__).parent.parent))
     from agent_core.router_core.utils import load_agents_registry, load_env, load_orchestrator_config
 
-# Dynamic detection of project root (parent of agent_core)
+# Dynamic detection of project root
 ROOT = Path(__file__).parent.parent.resolve()
 
 ERRORS: list[str] = []
@@ -46,7 +46,7 @@ def fail(msg: str) -> None:
 
 
 # ==========================================
-# 1. ENV VALIDATION (via Pydantic)
+# 1. ENV VALIDATION
 # ==========================================
 def validate_env() -> None:
     """Check .env file using EnvConfig schema."""
@@ -54,7 +54,6 @@ def validate_env() -> None:
     try:
         config = load_env()
 
-        # Check credentials
         if not config.credentials:
             warn("No API keys found (MOCK mode only).")
         else:
@@ -73,7 +72,7 @@ def validate_env() -> None:
 
 
 # ==========================================
-# 2. CONFIG VALIDATION (via Pydantic)
+# 2. CONFIG VALIDATION
 # ==========================================
 def validate_config() -> None:
     """Check agent_orchestrator.json using OrchestratorConfigModel."""
@@ -90,7 +89,46 @@ def validate_config() -> None:
 
 
 # ==========================================
-# 3. AGENTS VALIDATION (via Pydantic)
+# 3. ACMI ENGINE VALIDATION (Milestone 5 Integration)
+# ==========================================
+def validate_acmi() -> None:
+    """Verifies the state and presence of the ACMI Memory Engine."""
+    print("\n🧠 Checking ACMI Memory Engine...")
+    try:
+        config = load_orchestrator_config()
+        engine_enabled = config.memory_engine.enabled.value
+        db_rel_path = config.memory_engine.db_path.value
+        db_path = ROOT / db_rel_path if db_rel_path != ":memory:" else None
+
+        if engine_enabled:
+            ok("Memory Engine is ENABLED in config")
+            if db_path:
+                if db_path.exists():
+                    ok(f"Database file found: {db_rel_path}")
+                    # Deep health check if file exists
+                    try:
+                        from agent_core.memory_engine import MemoryEngine
+
+                        with MemoryEngine() as engine:
+                            health = engine.health_check()
+                            ok(f"Schema version: {health['schema_version']}")
+                            if health["pending_migrations"] > 0:
+                                warn(f"Database has {health['pending_migrations']} pending migrations.")
+                    except Exception as e:
+                        warn(f"Could not perform deep health check: {e}")
+                else:
+                    warn(f"Database file NOT FOUND at {db_rel_path}. System will create an empty one on start.")
+            else:
+                ok("Using in-memory database (:memory:)")
+        else:
+            warn("Memory Engine is DISABLED. Expert RAG features will be inactive.")
+
+    except Exception as e:
+        fail(f"ACMI validation failed: {e}")
+
+
+# ==========================================
+# 4. AGENTS VALIDATION
 # ==========================================
 def validate_agents() -> None:
     """Check .agents/agent_registry.json using AgentsRegistryModel."""
@@ -113,10 +151,10 @@ def validate_agents() -> None:
 
 
 # ==========================================
-# 4. STRUCTURE VALIDATION (Model 5.3)
+# 5. STRUCTURE VALIDATION
 # ==========================================
 def validate_structure() -> None:
-    """Verify that all Model 5.3 directories and files exist."""
+    """Verify that all mandatory directories and files exist."""
     print("\n📁 Checking Model 5.3 directory structure...")
 
     required_dirs = [
@@ -132,7 +170,7 @@ def validate_structure() -> None:
     required_files = [
         "CLAUDE.md",
         "pyproject.toml",
-        "agent_orchestrator.json",  # NEW NAME
+        "agent_orchestrator.json",
         ".python-version",
         "agent_context/TASKS.md",
         "agent_context/SESSION.md",
@@ -156,10 +194,10 @@ def validate_structure() -> None:
 
 
 # ==========================================
-# 5. SESSION & HALT VALIDATION
+# 6. SESSION & HALT VALIDATION
 # ==========================================
 def validate_session() -> None:
-    """Ensure SESSION.md exists in agent_context and follows bimetric schema."""
+    """Ensure SESSION.md exists and follows bimetric schema."""
     print("\n📋 Checking SESSION.md schema...")
     session_path = ROOT / "agent_context" / "SESSION.md"
     if not session_path.exists():
@@ -177,7 +215,7 @@ def validate_session() -> None:
 def validate_halt() -> None:
     """Report if the system is currently blocked by a HALT flag."""
     print("\n🚦 Checking HALT status...")
-    flag_path = ROOT / ".claude" / "cache" / "HALT.flag"
+    flag_path = ROOT / ".claude/cache/HALT.flag"
     if flag_path.exists():
         warn(f"System is currently HALTED: {flag_path.read_text()}")
     else:
@@ -189,11 +227,12 @@ def validate_halt() -> None:
 # ==========================================
 def main() -> None:
     """Execute all validation suites for the orchestrator."""
-    print("🛡️  Agent-CI-Lens Validator v8.0")
+    print("🛡️  Agent-CI-Lens Validator v9.0")
     print(f"   Root: {ROOT}")
 
     validate_env()
     validate_config()
+    validate_acmi()  # New ACMI check
     validate_agents()
     validate_structure()
     validate_session()

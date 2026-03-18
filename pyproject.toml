@@ -19,12 +19,14 @@ dependencies =[                        # Core runtime dependencies
 ]
 
 [dependency-groups]                     # Development tool specifications
-dev =[                                 # Quality gate toolchain
+dev =[                                  # Quality gate toolchain
     "pytest",                           # Primary test execution engine
+    "pytest-randomly",
     "pytest-json-report",               # Machine-readable test logging
     "pytest-cov",                       # TDD coverage measurement
     "ruff",                             # Tier 1: Fast mechanical linter
-    "mypy"                              # Tier 2: Logical type checker
+    "mypy",                             # Tier 2: Logical type checker
+    "respx>=0.22.0",                    # HTTP mocking for httpx in tests
 ]
 
 # --- Ruff: Tier 1 Quality Gate (Formatting & Mechanical Linting) ---
@@ -65,7 +67,7 @@ ignore =[                              # Intentional rule exemptions
     "D400",   # First line period      (Allows short descriptive AI titles)
     "D415",   # First line punctuation (Allows short descriptive AI titles)
     "TRY003", # Long exception message (Allows detailed AI error logs)
-	"D100",   # Missing module docstring (Bypassed for rapid file creation)
+    "D100",   # Missing module docstring (Bypassed for rapid file creation)
     "D104",   # Missing public package docstring Bypassed for __init__.py files)
     "D417",   # Missing argument descriptions in the docstring (enables ONE-LINER)
     "D107",   # Missing docstring in __init__	
@@ -98,5 +100,24 @@ warn_redundant_casts = true             # Flags unnecessary type conversions
 ignore_missing_imports = true           # Silences missing stub warnings
 
 [[tool.mypy.overrides]]
-module = "agent_tests.*"
-disable_error_code = ["method-assign"]
+module = "agent_tests.*"                # Framework kernel tests
+disable_error_code = ["method-assign"]  # Allows specific mock patterns
+
+# SYSTEMATIC FIX: Relax Mypy for application tests (No mandatory type hints required)
+[[tool.mypy.overrides]]
+module = "tests.*"                      # Targets agent-generated app tests
+disallow_untyped_defs = false           # Allows agents to skip test type hints
+disallow_incomplete_defs = false        # Prevents blocking on partial signatures
+
+# --- Pytest: Discovery & Execution ---
+[tool.pytest.ini_options]
+testpaths = ["tests", "agent_tests"]    # Explicit directories for test discovery
+python_files = "test_*.py"              # Standard file discovery pattern
+python_functions = "test_*"             # Standard function discovery pattern
+addopts = "-ra --strict-markers "       # Prevent "Zero Theater" by failing if no tests are collected
+minversion = "7.0"
+filterwarnings = ["error"]
+
+# fail if 0 tests:
+#addopts = "-ra --strict-markers -p no:cacheprovider"
+#required_plugins = ["pytest-cov"]

@@ -1,6 +1,7 @@
 .___jd_doc
 .agents/.vscode/settings.json
 .claude/cache/
+!/.claude/cache/memory.db
 .ruff_cache
 .venv/
 /.vscode/settings.json
@@ -14,4 +15,9 @@ agent_context/SESSION.md
 
 
 
+/src/__pycache__/
+/agent_core/__pycache__/
+/agent_core/router_core/__pycache__/
+/tests/__pycache__/
 /.mypy_cache/
+/agent_tests/__pycache__/

@@ -1,26 +1,24 @@
-# Agent-CI-Lens: Long-Term Memory (Model 6.0)
+# Agent-CI-Lens: Long-Term Memory (Model 6.1)
 
 ## Project Context
-This project is a Python-based Agentic CI/CD Orchestrator (Agent-CI-Lens).
-- **Core Engine:** Pydantic-backed State Machine (v1.5).
-- **Networking:** Hardened stack using `httpx` (sync context manager) and `stamina` for retries.
-- **VCS Strategy:** Native Python integration replacing legacy bash scripts.
+This project is an Agentic CI/CD Orchestrator (Agent-CI-Lens) designed for autonomous development loops.
+- **Core Engine:** Pydantic-backed State Machine (v1.6) with strict Atomic Task contracts.
+- **Intelligence Layer:** ACMI (Agent-CI Memory Intelligence) - A dual-source RAG system using SQLite FTS5 for rules and reflections.
+- **Resilience:** Multi-provider key rotation and automated fallback (e.g., Groq -> Mistral).
 
 ## Technology Stack
-- Language: Python 3.12
-- Manager: uv
-- Libraries: httpx, stamina, structlog, rich, pydantic.
+- **Language:** Python 3.12 (Strict typing with Mypy).
+- **Toolchain:** `uv` exclusively for dependency and environment management.
+- **Infrastructure:** Pydantic (validation), Instructor (structured LLM), Stamina (retries), Structlog (logging).
 
 ## Execution & Delivery Strategy
-- **Standard Flow:** Analyse -> Planning -> Executing -> Linting -> Testing -> Verifying -> VCS_DELIVERY.
-- **VCS Delivery:** Controlled via `agent_orchestrator.json` (vcs_control).
-- **Modes:** 
-  1. `local_git`: Local branches and atomic commits.
-  2. `github`: Automated PR creation and GHA polling via GitHub REST API.
-  3. `local_act`: (Planned) Local GHA simulation.
+- **Standard Flow:** Analyse -> STRATEGY (Planning) -> EXECUTING -> LINTING -> TESTING -> VERIFYING -> VCS_DELIVERY.
+- **Atomic Contract:** Every task MUST be defined as an `AtomicTask` containing both `source_file` and `test_file`.
+- **VCS Delivery:** GitHub API integration for PR creation and GHA (GitHub Actions) status polling.
+- **Self-Correction:** The engine automatically reverts states upon GHA failure to allow AI-driven bug fixes in the cloud.
 
 ## Architectural Constraints
-- **Bimetric Separation:** System state and flags belong in `agent_context/SESSION.md` -> `### [FEEDBACK]`. Never write to `[USER_SECTION]`.
-- **TDD Enforcement:** Every logic change requires a corresponding test in `tests/`.
-- **Zero Theater:** No task is marked completed without verified tool output (Pass/Fail).
-- **Self-Correction:** If VCS_DELIVERY (GHA) fails, the engine must route back to EXECUTING to fix cloud-specific issues.
+- **Bimetric Separation:** Strict isolation between `[USER_SECTION]` (Human-owned) and `[AGENT_SECTION]` (Machine-owned) in `SESSION.md`.
+- **ACMI RAG Priority:** Human-verified rules always take precedence over AI-generated reflections in the prompt.
+- **Zero Theater:** Results are only valid if verified by tool output (RESULT:PASS).
+- **YAGNI & Cohesion:** Implement only requested logic; group by domain responsibility.

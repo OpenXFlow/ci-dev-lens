@@ -1,5 +1,5 @@
 {
-  "version": "1.5",
+  "version": "1.6",
   "workflow_global": {
     "ci_mode": {
       "value": "local",
@@ -109,6 +109,14 @@
   "memory_management": {
     "yellow_zone_threshold": { "value": 0.7, "description": "Triggers ACTION_LOG compression at this context window percentage." },
     "red_zone_threshold": { "value": 0.9, "description": "Emergency threshold: Activates HALT to prevent context overflow." }
+  },
+  "memory_engine": {
+    "enabled": { "value": true, "description": "Feature flag to enable SQLite RAG memory. Safe to rollback." },
+    "db_path": { "value": ".claude/cache/memory.db", "description": "Path to the SQLite database file." },
+    "max_reflections": { "value": 1000, "description": "Determines how many lessons the AI ​​remembers before deleting the oldest - auto-pruning.(tables system_reflections,system_reflections_fts)" },
+    "max_execution_logs": { "value": 2000, "description": "Maximum number of execution logs to keep in the black box history.(table execution_logs)" },
+    "fts_result_limit": { "value": 10, "description": "Specifies the maximum number of rows returned in a single RAG query - FTS5 semantic queries. (tables knowledge_bank_fts, system_reflections_fts, codebase_nodes )" },
+    "vacuum_on_purge": { "value": true, "description": "Reorganizes all tables and frees up unused disk space  during 'make purge'. (whoole memory.db)" }
   },
   "logging": {
     "show_task_id": { "value": true, "description": "Prefix every log line with [TASK-XXX] for traceability." },

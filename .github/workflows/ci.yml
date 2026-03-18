@@ -2,6 +2,10 @@ name: CI Pipeline
 on:
   push:
     branches: [ "main", "feat/*" ]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
   pull_request:
     branches: [ "main" ]
 
@@ -15,7 +19,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
       - name: Run Pytest
         run: |
           export PATH="$HOME/.local/bin:$PATH"

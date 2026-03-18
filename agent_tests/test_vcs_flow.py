@@ -5,7 +5,7 @@
 
 """
 agent_tests/test_vcs_flow.py - Unit tests for VCS integration & Engine Delivery logic.
-(v 1.22) Cleaned up mocking using direct assignments, now supported by pyproject.toml overrides.
+(v 1.26) Added max_execution_logs to mock config.
 """
 
 import time
@@ -34,10 +34,10 @@ def fast_tests_no_sleep(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None
 
 
 def create_mock_config() -> OrchestratorConfigModel:
-    """Creates a v1.4 compliant mock configuration."""
+    """Creates a v1.6 compliant mock configuration."""
     return OrchestratorConfigModel.model_validate(
         {
-            "version": "1.4",
+            "version": "1.6",
             "workflow_global": {
                 "ci_mode": {"value": "local"},
                 "loop_mode": {"value": True},
@@ -79,6 +79,14 @@ def create_mock_config() -> OrchestratorConfigModel:
             "memory_management": {
                 "yellow_zone_threshold": {"value": 0.7},
                 "red_zone_threshold": {"value": 0.9},
+            },
+            "memory_engine": {
+                "enabled": {"value": False},
+                "db_path": {"value": ":memory:"},
+                "max_reflections": {"value": 100},
+                "max_execution_logs": {"value": 2000},
+                "fts_result_limit": {"value": 10},
+                "vacuum_on_purge": {"value": False},
             },
             "logging": {"show_task_id": {"value": True}, "verbosity": {"value": "INFO"}},
         }
@@ -139,7 +147,9 @@ class TestRouterVCSFlow:
         return r
 
     def test_pipeline_success(self, router: Router) -> None:
-        def mock_agent(_agent_name: str, _task_desc: str, _current_state: str, _tid: str | None = None) -> dict:
+        def mock_agent(
+            _agent_name: str, _task_desc: str, _current_state: str, _tid: str | None = None, **_kwargs: Any
+        ) -> dict[str, str]:
             return {"status": "OK"}
 
         with (
@@ -150,7 +160,9 @@ class TestRouterVCSFlow:
             assert router.session.read()["STATE"] == "IDLE"
 
     def test_pipeline_halt_on_agent_error(self, router: Router) -> None:
-        def mock_agent(_agent_name: str, _task_desc: str, _current_state: str, _tid: str | None = None) -> dict:
+        def mock_agent(
+            _agent_name: str, _task_desc: str, _current_state: str, _tid: str | None = None, **_kwargs: Any
+        ) -> dict[str, str]:
             if _agent_name == "developer":
                 return {"error": "API_SYSTEM_ERROR"}
             return {"status": "OK"}
@@ -188,12 +200,15 @@ class TestRouterVCSFlow:
             return_value=[{"id": "002", "description": "task 2", "is_synthetic": False}]
         )
         router.tasks.get_current_goal_id = MagicMock(return_value="001")
-        router.run_agent = MagicMock(return_value={"status": "OK"})
-        router._run_vcs_delivery = MagicMock(return_value=True)
 
-        router.git.ensure_branch = MagicMock()
-        router.run_pipeline()
-        router.git.ensure_branch.assert_called_with("feat/001")
+        def mock_agent(*_args: Any, **_kwargs: Any) -> dict[str, str]:
+            return {"status": "OK"}
+
+        with patch.object(router, "run_agent", side_effect=mock_agent):
+            router._run_vcs_delivery = MagicMock(return_value=True)
+            router.git.ensure_branch = MagicMock()
+            router.run_pipeline()
+            router.git.ensure_branch.assert_called_with("feat/001")
 
     def test_vcs_pr_already_exists_422(self, router: Router) -> None:
         """Verify that 422 error during PR creation doesn't crash the pipeline."""
@@ -225,23 +240,27 @@ class TestRouterVCSFlow:
         router.tasks.get_active_tasks = MagicMock(
             return_value=[{"id": "001", "description": "task", "is_synthetic": False}]
         )
-        router.run_agent = MagicMock(return_value={"status": "OK"})
-        router._run_vcs_delivery = MagicMock(return_value=False)
 
-        # Nastavíme konfiguráciu
-        for stage in ["ANALYSE", "PLANNING", "LINTING", "TESTING", "VERIFYING"]:
-            router.orch_config.workflow_local[stage].active.value = False
-        router.orch_config.workflow_local["EXECUTING"].active.value = True
-        router.orch_config.workflow_local["VCS_DELIVERY"].active.value = True
+        def mock_agent(*_args: Any, **_kwargs: Any) -> dict[str, str]:
+            return {"status": "OK"}
 
-        router.orch_config.workflow_local["VCS_DELIVERY"].max_retries.value = 2
+        with patch.object(router, "run_agent", side_effect=mock_agent):
+            router._run_vcs_delivery = MagicMock(return_value=False)
 
-        s = router.session.read()
-        s["ACTION_LOG"] = "STAGE_SUCCESS:EXECUTING:001"
-        router.session._write_all(s)
+            for stage in ["ANALYSE", "PLANNING", "LINTING", "TESTING", "VERIFYING"]:
+                if stage in router.orch_config.workflow_local:
+                    router.orch_config.workflow_local[stage].active.value = False
+            router.orch_config.workflow_local["EXECUTING"].active.value = True
+            router.orch_config.workflow_local["VCS_DELIVERY"].active.value = True
 
-        router.run_pipeline()
+            router.orch_config.workflow_local["VCS_DELIVERY"].max_retries.value = 2
 
-        log_content = router.session.read()["ACTION_LOG"]
-        assert "REVERTED:EXECUTING:001" in log_content
-        assert "STAGE_FAIL:VCS_DELIVERY:001" in log_content
+            s = router.session.read()
+            s["ACTION_LOG"] = "STAGE_SUCCESS:EXECUTING:001"
+            router.session._write_all(s)
+
+            router.run_pipeline()
+
+            log_content = router.session.read()["ACTION_LOG"]
+            assert "REVERTED:EXECUTING:001" in log_content
+            assert "STAGE_FAIL:VCS_DELIVERY:001" in log_content

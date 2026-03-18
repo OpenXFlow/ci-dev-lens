@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # The MIT License (MIT)
-# Copyright (c) 2026 Jozef Darida  (LinkedIn/Xing)
+# Copyright (c) 2026 Jozef Darida (LinkedIn/Xing)
 # For full license text, see the LICENSE file in the project root.
 """
-agent_tests/test_skills.py - Full unit tests for agent skills and logic (v 1.5)
-Fixtures are defined in conftest.py
+agent_tests/test_skills.py - Full unit tests for agent skills and logic (v 1.7).
+Definitive fix for Mypy "object" type inference in McpBridge tests.
 """
 
 import json
@@ -21,29 +21,29 @@ SKILLS_DIR = ROOT / ".claude" / "skills"
 # HELPER FUNCTIONS (Logic mirrored from skills)
 # ==========================================
 
-SECRET_PATTERNS =[
-    (r'AIza[0-9A-Za-z\-_]{31,}', "Google API Key"),
-    (r'gsk_[0-9A-Za-z]{32,}', "Groq API Key"),
-    (r'github_pat_[0-9A-Za-z_]{36,}', "GitHub PAT"),
-    (r'sk-[0-9A-Za-z]{32,}', "OpenAI API Key"),
+SECRET_PATTERNS = [
+    (r"AIza[0-9A-Za-z\-_]{31,}", "Google API Key"),
+    (r"gsk_[0-9A-Za-z]{32,}", "Groq API Key"),
+    (r"github_pat_[0-9A-Za-z_]{36,}", "GitHub PAT"),
+    (r"sk-[0-9A-Za-z]{32,}", "OpenAI API Key"),
     (r'(?i)(password|passwd|pwd)\s*=\s*["\'][^"\']{4,}["\']', "Hardcoded password"),
-    (r'-----BEGIN (RSA |EC )?PRIVATE KEY-----', "Private key"),
+    (r"-----BEGIN (RSA |EC )?PRIVATE KEY-----", "Private key"),
 ]
 
-WARN_PATTERNS =[
-    (r'\beval\s*\(', "eval()"),
-    (r'\bexec\s*\(', "exec()"),
-    (r'pickle\.loads?\s*\(', "pickle.load()"),
+WARN_PATTERNS = [
+    (r"\beval\s*\(", "eval()"),
+    (r"\bexec\s*\(", "exec()"),
+    (r"pickle\.loads?\s*\(", "pickle.load()"),
 ]
 
-NOISE_PATTERNS =[
+NOISE_PATTERNS = [
     r"Agent \w+ finished\. Skills: \d+",
     r"Token budget: \d+/\d+",
     r"Mock response for agent",
     r"STATE → \w+",
 ]
 
-IMPORTANT_PATTERNS =[
+IMPORTANT_PATTERNS = [
     r"HALT",
     r"TASK-\w+.*completed",
     r"Mypy error",
@@ -204,7 +204,7 @@ class TestContextCompressorCompression:
             "[10:03] Pipeline TASK-001 completed successfully.",
         ]
         important = [line for line in lines if is_important(line)]
-        noise =[line for line in lines if is_noise(line)]
+        noise = [line for line in lines if is_noise(line)]
         assert len(important) == 2
         assert len(noise) == 2
 
@@ -222,7 +222,7 @@ class TestHandoffManager:
     def test_reads_active_tasks(self, tmp_project: Path) -> None:
         """Verify Handoff Manager reads active tasks from agent_context."""
         content = (tmp_project / "agent_context" / "TASKS.md").read_text(encoding="utf-8")
-        active =[line for line in content.splitlines() if line.startswith("- [ ]")]
+        active = [line for line in content.splitlines() if line.startswith("- [ ]")]
         # Model 5.2 conftest.py injects both GOAL-001 and TASK-001
         assert len(active) == 2
         assert "GOAL-001" in active[0]
@@ -238,13 +238,14 @@ class TestHandoffManager:
     def test_last_actions_extraction(self) -> None:
         """Verify extraction of the most recent log entries."""
         action_log = "[10:00] Step 1\n[10:01] Step 2\n[10:02] Step 3"
-        lines =[line for line in action_log.splitlines() if line.strip()]
+        lines = [line for line in action_log.splitlines() if line.strip()]
         assert lines[-1] == "[10:02] Step 3"
         assert len(lines[-10:]) == 3
 
     def test_handoff_file_naming(self) -> None:
         """Verify that handoff filenames follow the timestamped pattern."""
         from datetime import datetime
+
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         filename = f"handoff-{timestamp}.md"
         assert filename.startswith("handoff-")
@@ -263,17 +264,23 @@ class TestHandoffManager:
 # TESTS: MCP Bridge
 # ==========================================
 class TestMcpBridge:
+    """Test suite for the MCP Bridge proxy simulation."""
+
     SUPPORTED_TOOLS: ClassVar[dict[str, list[str]]] = {
         "github": ["create_issue", "comment_issue", "create_pr", "merge_pr"],
         "slack": ["notify", "post_message"],
-        "jira":["create_ticket", "update_ticket", "comment"],
+        "jira": ["create_ticket", "update_ticket", "comment"],
     }
 
     def validate_call(self, tool: str, action: str) -> tuple[bool, str]:
-        """Simulation of MCP validation logic."""
-        if tool not in self.SUPPORTED_TOOLS:
+        """Simulation of MCP validation logic with definitive Mypy fix."""
+        # DEFINITIVE FIX: Use the class name for access to resolve the 'object' inference error.
+        # Explicitly typing the local variable ensures Mypy treats it as a Mapping.
+        tools: dict[str, list[str]] = TestMcpBridge.SUPPORTED_TOOLS
+
+        if tool not in tools:
             return False, f"Unknown tool: {tool}"
-        if action not in self.SUPPORTED_TOOLS[tool]:
+        if action not in tools[tool]:
             return False, f"Unknown action '{action}' for {tool}"
         return True, ""
 
@@ -307,6 +314,7 @@ class TestMcpBridge:
     def test_mock_response_structure(self) -> None:
         """Verify the JSON schema of a simulated MCP response."""
         from datetime import datetime
+
         result = {
             "mock": True,
             "tool": "github",
@@ -318,8 +326,8 @@ class TestMcpBridge:
         assert "MOCK" in result["result"]
 
     def test_all_tools_have_actions(self) -> None:
-        """Verify that every supported tool has at least one action."""
-        for _, actions in self.SUPPORTED_TOOLS.items():
+        """Verify that every supported tool has at least one action (Ruff PERF102 Fix)."""
+        for actions in TestMcpBridge.SUPPORTED_TOOLS.values():
             assert len(actions) > 0
 
     def test_valid_json_params(self) -> None:

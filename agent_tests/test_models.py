@@ -4,7 +4,8 @@
 # For full license text, see the LICENSE file in the project root.
 
 """
-agent_tests/test_models.py - Unit tests for Pydantic configuration schemas (v 1.3)
+agent_tests/test_models.py - Unit tests for Pydantic configuration schemas (v 1.6).
+Updated to support max_execution_logs in MemoryEngineConfig.
 """
 
 from agent_core.router_core.models import (
@@ -68,7 +69,7 @@ class TestOrchestratorConfig:
     def test_valid_config_parsing(self) -> None:
         """Verify that the complex nested config parses correctly."""
         data = {
-            "version": "1.4",
+            "version": "1.6",
             "workflow_global": {
                 "ci_mode": {"value": "local"},
                 "loop_mode": {"value": True},
@@ -100,6 +101,14 @@ class TestOrchestratorConfig:
                 "fallback_matrix": {"GROQ": {"fallback_provider": "MISTRAL", "fallback_model": "mistral-large"}},
             },
             "memory_management": {"yellow_zone_threshold": {"value": 0.7}, "red_zone_threshold": {"value": 0.9}},
+            "memory_engine": {
+                "enabled": {"value": False},
+                "db_path": {"value": ".claude/cache/memory.db"},
+                "max_reflections": {"value": 1000},
+                "max_execution_logs": {"value": 2000},
+                "fts_result_limit": {"value": 10},
+                "vacuum_on_purge": {"value": True},
+            },
             "logging": {"show_task_id": {"value": True}, "verbosity": {"value": "INFO"}},
         }
         config = OrchestratorConfigModel.model_validate(data)
@@ -108,3 +117,9 @@ class TestOrchestratorConfig:
         assert config.vcs_control.github_settings.gha_timeout_minutes.value == 15
         assert config.resilience.fallback_matrix["GROQ"].fallback_provider == "MISTRAL"
         assert config.resilience.retry_attempts.value == 5
+
+        # New Memory Engine Validations
+        assert config.memory_engine.enabled.value is False
+        assert config.memory_engine.max_reflections.value == 1000
+        assert config.memory_engine.max_execution_logs.value == 2000
+        assert config.memory_engine.db_path.value == ".claude/cache/memory.db"

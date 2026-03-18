@@ -5,12 +5,13 @@
 
 """
 agent_tests/test_router.py - Core Engine unit tests.
-(v 1.21) Added unit tests for Dumb Pedant optimization.
+(v 1.29) Added max_execution_logs to mock config.
 """
 
 import time
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
@@ -37,10 +38,10 @@ def fast_tests_no_sleep(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None
 
 
 def create_mock_config() -> OrchestratorConfigModel:
-    """Creates a v1.4 compliant mock configuration."""
+    """Creates a v1.6 compliant mock configuration."""
     return OrchestratorConfigModel.model_validate(
         {
-            "version": "1.4",
+            "version": "1.6",
             "workflow_global": {
                 "ci_mode": {"value": "local"},
                 "loop_mode": {"value": True},
@@ -82,6 +83,14 @@ def create_mock_config() -> OrchestratorConfigModel:
             "memory_management": {
                 "yellow_zone_threshold": {"value": 0.7},
                 "red_zone_threshold": {"value": 0.9},
+            },
+            "memory_engine": {
+                "enabled": {"value": False},
+                "db_path": {"value": ":memory:"},
+                "max_reflections": {"value": 100},
+                "max_execution_logs": {"value": 2000},
+                "fts_result_limit": {"value": 10},
+                "vacuum_on_purge": {"value": False},
             },
             "logging": {"show_task_id": {"value": True}, "verbosity": {"value": "INFO"}},
         }
@@ -186,12 +195,12 @@ class TestTasksManager:
 class TestHaltManager:
     def test_initial_state(self, tmp_project: Path) -> None:
         hm = HaltManager()
-        hm.flag_path = tmp_project / ".claude" / "cache" / "HALT.flag"
+        hm.flag_path = tmp_project / ".claude/cache/HALT.flag"
         assert not hm.is_halted()
 
     def test_halt_activation(self, tmp_project: Path) -> None:
         hm = HaltManager()
-        hm.flag_path = tmp_project / ".claude" / "cache" / "HALT.flag"
+        hm.flag_path = tmp_project / ".claude/cache/HALT.flag"
         hm.halt("Stop")
         assert hm.is_halted()
         assert "Stop" in hm.flag_path.read_text()
@@ -243,7 +252,7 @@ class TestRouterRunAgent:
         r = Router(mock=True)
         r.session.path = tmp_project / "agent_context" / "SESSION.md"
         r.tasks.path = tmp_project / "agent_context" / "TASKS.md"
-        r.halt.flag_path = tmp_project / ".claude" / "cache" / "HALT.flag"
+        r.halt.flag_path = tmp_project / ".claude/cache/HALT.flag"
         return r
 
     def test_run_queen_structured(self, router: Router) -> None:
@@ -290,6 +299,43 @@ class TestRouterRunAgent:
             router.run_agent("developer", "task", "EXECUTING")
             assert mock_run.call_count == 2
 
+    def test_skill_execution_db_logging(
+        self, router: Router, tmp_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify that skill execution logs are stored in the Memory Engine (Milestone 3)."""
+        from agent_core.memory_engine import MemoryEngine
+
+        cfg = router.orch_config
+        cfg.memory_engine.enabled.value = True
+        cfg.memory_engine.db_path.value = str(tmp_project / ".claude/cache/memory.db")
+
+        monkeypatch.setattr("agent_core.router_core.utils.load_orchestrator_config", lambda: cfg)
+        monkeypatch.setattr("agent_core.memory_engine.load_orchestrator_config", lambda: cfg)
+
+        router.orch_config = cfg
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="Mock output\nRESULT:PASS", stderr="")
+            tag, out = router._run_skill_process("testing-pro", {}, "TASK-999", "TESTING", 2)
+
+            assert tag == "RESULT:PASS"
+            assert "Mock output" in out
+
+            with MemoryEngine(db_path=cfg.memory_engine.db_path.value) as engine:
+                conn = engine.get_connection()
+                cursor = conn.execute(
+                    "SELECT task_id, stage, tool, result, attempt, duration_ms "
+                    "FROM execution_logs WHERE task_id = 'TASK-999'"
+                )
+                row = cursor.fetchone()
+
+                assert row is not None
+                assert row["stage"] == "TESTING"
+                assert row["tool"] == "testing-pro"
+                assert row["result"] == "PASS"
+                assert row["attempt"] == 2
+                assert row["duration_ms"] >= 0
+
 
 class TestRouterPipeline:
     @pytest.fixture
@@ -309,7 +355,9 @@ class TestRouterPipeline:
         return r
 
     def test_pipeline_success(self, router: Router) -> None:
-        def mock_agent(_agent_name: str, _task_desc: str, _current_state: str, _tid: str | None = None) -> dict:
+        def mock_agent(
+            _agent_name: str, _task_desc: str, _current_state: str, _tid: str | None = None, **_kwargs: Any
+        ) -> dict[str, str]:
             return {"status": "OK"}
 
         with (
@@ -320,7 +368,9 @@ class TestRouterPipeline:
             assert router.session.read()["STATE"] == "IDLE"
 
     def test_pipeline_halt_on_agent_error(self, router: Router) -> None:
-        def mock_agent(_agent_name: str, _task_desc: str, _current_state: str, _tid: str | None = None) -> dict:
+        def mock_agent(
+            _agent_name: str, _task_desc: str, _current_state: str, _tid: str | None = None, **_kwargs: Any
+        ) -> dict[str, str]:
             if _agent_name == "developer":
                 return {"error": "API_SYSTEM_ERROR"}
             return {"status": "OK"}
@@ -329,16 +379,15 @@ class TestRouterPipeline:
             router.run_pipeline()
             assert router.session.read()["STATE"] == "BLOCKED"
 
-    # --- ARCHITECT FIX: Dumb Pedant Tests ---
     def test_dumb_pedant_success_skips_llm(self, router: Router) -> None:
         """Verify that a perfect local linting result skips the LLM call entirely."""
         router.tasks.get_active_tasks = MagicMock(
             return_value=[{"id": "001", "description": "task", "is_synthetic": False}]
         )
 
-        # Turn everything off except LINTING
         for stage in ["ANALYSE", "PLANNING", "EXECUTING", "TESTING", "VERIFYING", "VCS_DELIVERY"]:
-            router.orch_config.workflow_local[stage].active.value = False
+            if stage in router.orch_config.workflow_local:
+                router.orch_config.workflow_local[stage].active.value = False
         router.orch_config.workflow_local["LINTING"].active.value = True
 
         with (
@@ -348,7 +397,6 @@ class TestRouterPipeline:
             router.run_pipeline()
 
             mock_skill.assert_called_once()
-            # Crucial assertion: AI was never invoked because Dumb Pedant handled it
             mock_agent.assert_not_called()
             assert "STAGE_SUCCESS:LINTING:001" in router.session.read()["ACTION_LOG"]
 
@@ -359,7 +407,8 @@ class TestRouterPipeline:
         )
 
         for stage in ["ANALYSE", "PLANNING", "EXECUTING", "TESTING", "VERIFYING", "VCS_DELIVERY"]:
-            router.orch_config.workflow_local[stage].active.value = False
+            if stage in router.orch_config.workflow_local:
+                router.orch_config.workflow_local[stage].active.value = False
         router.orch_config.workflow_local["LINTING"].active.value = True
 
         with (
@@ -369,5 +418,4 @@ class TestRouterPipeline:
             router.run_pipeline()
 
             mock_skill.assert_called_once()
-            # Crucial assertion: AI was invoked because Dumb Pedant failed to fix everything
             mock_agent.assert_called_once()

@@ -1,79 +1,68 @@
-# 🏗️ Agent-CI-Lens: Framework Development Guide (Model 6.0)
+# 🏗️ Agent-CI-Lens: Framework Development Guide (Model 6.1)
 
 This guide is intended for developers who wish to modify the orchestrator kernel, add new skills, or extend the system's capabilities.
 
 ---
 
-## 1. Internal Coding Standards
+## 1. Internal Coding Standards (Kernel)
 When writing code for the **Agent-CI-Lens** kernel (`agent_core/`), you must adhere to higher standards than the target application:
 
-*   **Pydantic First:** Any new configuration or structured data must be defined as a Pydantic model in `agent_core/router_core/models.py`. The system relies on this for type safety and validation.
-*   **Agnostic Logic:** Never hardcode provider names (like "Groq") or file paths. Use the `EnvConfig` credentials map and `ROOT` constants.
-*   **Zero-Side-Effects:** Kernel utilities should be pure functions whenever possible to ensure they are easily testable.
-*   **Minimal Dependencies:** Do not add external libraries to `pyproject.toml` unless absolutely necessary. Prefer standard library modules (e.g., `sqlite3`, `tomllib`).
+*   **Pydantic & Type Safety:** Every core data structure MUST be a Pydantic V2 model in `agent_core/router_core/models.py`. 
+*   **Telemetry Awareness:** Any method invoking an LLM must capture and propagate `usage` metadata to be recorded in the `execution_logs` table.
+*   **Agnostic Design:** Maintain provider-neutrality. Use the `_parse_usage` parser in `llm.py` to handle cross-provider metadata differences.
 
 ---
 
 ## 2. Adding a New Skill
-To give agents a new capability (e.g., "Database Migrator"), follow these steps:
+To give agents a new capability, follow these steps:
 
 ### Step A: Create the Script
 Add your execution logic (Python or Bash) to a new subdirectory in `.claude/skills/`.
-*   Example: `.claude/skills/db-manager/scripts/migrate.py`
-*   Ensure the script returns a `RESULT:` tag (e.g., `RESULT:PASS`, `RESULT:MIGRATE_FAIL`) as its final output line.
+*   Ensure the script returns a `RESULT:` tag (e.g., `RESULT:PASS`, `RESULT:ERROR`) as its final output line.
 
-### Step B: Define the Metadata
-Create a `SKILL.md` file in that same folder describing the usage, arguments, and expected results for the AI.
+### Step B: Register in the Engine
+Update the `_run_skill_process` method in `agent_core/router_core/engine.py`. Add your skill to the `s_map` dictionary.
 
-### Step C: Register in the Engine
-Update the `_run_skill_process` method in `agent_core/router_core/engine.py`. Add your skill to the `s_map` dictionary:```python
-s_map = {
-    "db-manager": ".claude/skills/db-manager/scripts/migrate.py",
-    # ...
-}
-```
+### Step C: Mandatory Rule Injection
+If the new skill requires specific usage patterns (e.g., a specific CLI flag), add a corresponding rule to the **ACMI Knowledge Bank** and flag it as `is_mandatory=1` for the relevant agent role.
 
 ---
 
-## 3. Extending the State Machine
-The system logic lives in `agent_core/router_core/engine.py` within the `run_pipeline` loop.
+## 3. Extending the Dispatcher (State Machine)
+The core logic has moved from a linear loop to a **Dispatcher Architecture**.
 
-*   To add a **new State** (e.g., `DOCUMENTING`):
-    1.  Add the state name to the `stages` list in `run_pipeline` (e.g., `("DOCUMENTING", "developer")`).
-    2.  Update `agent_orchestrator.json` to include the new stage in `workflow_local`, making sure to define its `requires_llm` flag.
-    3.  Create or update a Persona file in `.agents/` to handle the logic for this new state.
-    4.  Update the Pydantic `OrchestratorConfigModel` in `models.py` if the structure changes.
+*   **`run_pipeline`**: Manages the high-level sequence of stages.
+*   **`_execute_stage`**: The central dispatcher. If you add a new stage, you must define its routing here:
+    *   Determine if it requires an LLM (`requires_llm` flag).
+    *   Map it to a local skill or an AI agent.
+    *   Implement any "Pre-flight" logic (like context compression).
 
 ---
 
 ## 4. Kernel Testing (`agent_tests/`)
-Before committing any changes to the framework, you **must** run the kernel test suite and ensure all tests pass (currently 117/117).
+Before committing any changes to the framework, you **must** run the kernel test suite.
 
 ```bash
 make test-kernel
 ```
 
-### Adding Kernel Tests:
-*   **Specialization:** Do not add all tests to `test_router.py`. Use the specialized files:
-    *   `test_git_wrapper.py` for low-level Git commands.
-    *   `test_vcs_flow.py` for high-level Git/GitHub integration logic in the engine.
-    *   `test_router.py` for core state management, agent calls, and managers.
-*   **Fixtures:** Use the `tmp_project` fixture from `conftest.py`. It creates a mock Model 6.0 environment in a temporary directory.
-*   **Test for Fail-Fast behavior:** Ensure the system triggers a `HALT` or `BLOCKED` state when expected.
-*   **Test for Resilience:** Ensure the system correctly handles API errors, rollbacks, and state inconsistencies.
+### Critical Test Areas:
+*   **Telemetry Tests:** Verify that token counts are correctly parsed and stored in SQLite.
+*   **Dispatcher Tests:** Ensure that `requires_llm: false` stages (like TESTING) never trigger an LLM call.
+*   **RAG Tests:** Confirm that mandatory rules are correctly injected at the top of the prompt.
+*   **Bimetric Shield:** Verify that core files remain read-only for agents.
 
 ---
 
-## 5. The "Atomic Feature" Workflow
-When implementing a complex feature in the target application using the orchestrator, follow this 3-step loop:
+## 5. The "Karpathy-Style" Workflow
+When developing the framework itself, treat every core change as an experiment:
 
-1.  **Define the Goal:** Add a `GOAL-XXX` to `TASKS.md`.
-2.  **Guide the Context:** Add specific technical constraints to `SESSION.md` (e.g., *"Use SQLAlchemy for the models"*).
-3.  **Monitor the Flow:** Run `make pipeline`. If the agent gets stuck, analyze the `FEEDBACK` and `ACTION_LOG` sections in `SESSION.md` to understand the root cause. Adjust context or agent personas as needed.
+1.  **Define Goal:** Use `make spec` to define a clear architectural goal.
+2.  **Monitor ROI:** Use `make tokens-last` after kernel tests to evaluate the "token cost" of your change.
+3.  **Reflection:** If a kernel test fails, use the `REFLECTION` state to analyze the log and store the fix in the database for the next dev cycle.
 
 ---
 
 ## 💡 Framework Maintenance Tips
-*   **Log Ambiguity:** If terminal logs become messy, check `utils.py`. We use specific emojis to make the state transitions scanable at a glance.
-*   **Dependency Management:** Always use `uv add --group dev <package>` for kernel tools to keep them separated from the target application's production dependencies.
-*   **Configuration First:** Before modifying Python code, always check if the desired behavior can be achieved by adjusting `agent_orchestrator.json`.
+*   **Database Migrations:** All schema changes must be added as a new numbered entry in the `MIGRATIONS` dictionary within `memory_engine.py`.
+*   **Clean Slate:** Use `make tokens-reset` before starting a major refactor to get clean telemetry data for your changes.

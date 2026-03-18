@@ -9,14 +9,12 @@ Diagnostic test to verify and inspect the injected linter rules in AI prompts.
 Fixed PromptBuilder.build signature call with state argument.
 """
 
-from typing import Any
-
 from agent_core.router_core.llm import PromptBuilder
 from agent_core.router_core.models import AgentProfile
 from agent_core.router_core.utils import load_linter_rules
 
 
-def test_prompt_contains_rules(capsys: Any) -> None:
+def test_prompt_contains_rules() -> None:
     """Verifies that linting rules are dynamically injected and prints them."""
     builder = PromptBuilder()
     profile = AgentProfile(

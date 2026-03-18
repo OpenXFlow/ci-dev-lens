@@ -5,12 +5,13 @@
 
 """
 agent_core/router_core/managers.py
-State managers for agent_context (v 1.9 Goal-Based Branching Support).
+State managers for agent_context (v 1.11.4 Goal-Based Branching & Multi-line GOAL Parser).
+Surgical Patch: Definitive Mypy type fix for multi-line parser using cast.
 """
 
 import re
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from .utils import ROOT, log
 
@@ -36,11 +37,9 @@ class SessionManager:
         content = self.path.read_text(encoding="utf-8")
         sections: dict[str, str] = {}
 
-        # 1. Parse User Section
         user_match = re.search(r"##\s*\[?\s*USER_SECTION\s*\]?(.*?)---", content, re.DOTALL | re.IGNORECASE)
         self.user_section_cache = user_match.group(1).strip() if user_match else ""
 
-        # Sub-sections (Context, Workspace)
         ctx_match = re.search(
             r"###\s*\[?\s*CONTEXT\s*\]?\n(.*?)(?=\n###|$)",
             self.user_section_cache,
@@ -55,11 +54,9 @@ class SessionManager:
         )
         sections["WORKSPACE"] = wrk_match.group(1).strip() if wrk_match else ""
 
-        # 2. Parse Agent Section
         agent_match = re.search(r"##\s*\[?\s*AGENT_SECTION\s*\]?(.*)", content, re.DOTALL | re.IGNORECASE)
         agent_part = agent_match.group(1) if agent_match else ""
 
-        # Sub-sections (State, Feedback, Log)
         state_match = re.search(
             r"###\s*\[?\s*STATE\s*\]?\n(.*?)(?=\n###|$)",
             agent_part,
@@ -188,14 +185,14 @@ class TasksManager:
         return None
 
     def get_active_tasks(self) -> list[dict[str, Any]]:
-        """Extracts the first pending task or goal using tolerant regex."""
+        """Extracts the first pending task or goal using tolerant regex & block parsing."""
         if not self.path.exists():
             return []
 
         content = self.path.read_text(encoding="utf-8")
         user_queue, agent_part = self._split_sections(content)
 
-        # 1. Search in AGENT_PROGRESS
+        # 1. Search in AGENT_PROGRESS (Strict Single-Line Rules)
         tasks: list[dict[str, Any]] = []
         for line in agent_part.splitlines():
             if match := TASK_PATTERN.match(line):
@@ -221,32 +218,41 @@ class TasksManager:
         if tasks:
             return tasks
 
-        # 2. Fallback to USER_QUEUE
+        # 2. Fallback to USER_QUEUE (Multi-Line Block Parsing for Constraints & Metrics)
         user_queue_clean = re.split(r"^---", user_queue, flags=re.MULTILINE)[0]
+        current_goal = None
 
         for line in user_queue_clean.splitlines():
             if match := TASK_PATTERN.match(line):
+                if current_goal:
+                    break
+
                 status = match.group(1).strip().lower()
                 t_type = match.group(2).upper()
                 t_id = match.group(3)
                 raw_desc = match.group(4)
 
                 if t_type == "GOAL" and status == "":
-                    return [
-                        {
-                            "id": f"GOAL-{t_id}",
-                            "description": raw_desc.strip(),
-                            "attempts": 0,
-                            "is_synthetic": True,
-                        }
-                    ]
+                    current_goal = {
+                        "id": f"GOAL-{t_id}",
+                        "description": raw_desc.strip(),
+                        "attempts": 0,
+                        "is_synthetic": True,
+                    }
+            elif current_goal and line.strip():
+                # SURGICAL PATCH: Explicitly cast to str to satisfy Mypy.
+                current_goal["description"] = cast(str, current_goal["description"]) + f"\n{line}"
+
+        if current_goal:
+            return [current_goal]
 
         return []
 
     def get_all_task_ids(self) -> set[str]:
         if not self.path.exists():
             return set()
-        return set(re.findall(r"TASK-(\d+)", self.path.read_text(encoding="utf-8")))
+        # BIMETRIC SHIELD FIX: Protect both GOAL and TASK IDs from deletion
+        return set(re.findall(r"(?:TASK|GOAL)-([\w\-]+)", self.path.read_text(encoding="utf-8")))
 
     def are_all_tasks_completed(self) -> bool:
         """Sémanticky overí, či sú všetky vygenerované úlohy uzavreté."""
@@ -310,9 +316,8 @@ class TasksManager:
                     if att_match := re.search(r"\[attempts:\s*(\d+)\]", raw_desc):
                         current_att = int(att_match.group(1))
                         new_att = current_att + 1
-                        raw_desc = (
-                            raw_desc[: att_match.start()] + f"[attempts: {new_att}]" + raw_desc[att_match.end() :]
-                        )
+                        attempts_str = f"[attempts: {new_att}]"
+                        raw_desc = f"{raw_desc[: att_match.start()]}{attempts_str}{raw_desc[att_match.end() :]}"
                     else:
                         new_att = 1
                         raw_desc = f"{raw_desc}[attempts: {new_att}]"
@@ -320,7 +325,7 @@ class TasksManager:
                     new_status = status if status else " "
                     if new_att >= self.max_attempts:
                         new_status = "BLOCKED"
-                        raw_desc = f"{raw_desc} -> Zlyhalo: {error}"
+                        raw_desc = f"{raw_desc} -> Failed: {error}"
 
                     lines[i] = f"-[{new_status}] {t_type}-{t_id}: {raw_desc}"
                     break

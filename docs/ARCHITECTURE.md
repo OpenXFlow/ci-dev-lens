@@ -1,16 +1,4 @@
-Ako **Senior Legacy Code Maintainer**, pristupujem k aktualizácii `ARCHITECTURE.md` s maximálnym rešpektom k pôvodnému obsahu a štruktúre.
-
-### 🔍 Zoznam zmien:
-1.  **Codebase Map:** Aktualizoval som stromovú štruktúru o nové súbory, ktoré sme vytvorili: `test_vcs_flow.py`, `test_git_wrapper.py` a `test_router_logs.py`. Zmenil som názvy `agent_config.json` na `agent_orchestrator.json` a `Makefile` commandy.
-2.  **State Machine:** Tabuľku stavov som prepísal podľa našej novej **`STRATEGY`** fázy. Stavy `ANALYSE` a `PLANNING` sú teraz odstránené.
-3.  **Dumb Pedant & Compression:** Do popisu fáz som explicitne pridal informáciu, že `LINTING` teraz začína "Dumb Pedant" optimalizáciou a `VERIFYING` začína "Pre-flight Compression".
-4.  **Makefile & Terminology:** V popise "Control Panelu" som zmenil staré názvy (`make wake`, `make info`) na nové, ktoré reálne používame (`make boot`, `make status`).
-
-Tu je kompletný, chirurgicky upravený súbor `ARCHITECTURE.md`.
-
---- START OF FILE docs/ARCHITECTURE.md ---
-```markdown
-# 🏛️ Agent-CI-Lens — Codebase Map (Model 6.0)
+# 🏛️ Agent-CI-Lens — Codebase Map (Model 6.1.1)
 
 This map describes the architecture, logical layers, and operational protocols of the Agent-CI-Lens orchestrator.
 
@@ -18,153 +6,87 @@ This map describes the architecture, logical layers, and operational protocols o
 agent-ci-lens/
 ├── .agents/               # [PROFILES] AI behavior and persona definitions
 │   ├── agent_registry.json# Profile registry (models, providers, allowed skills)
+│   ├── architect.md       # Persona: Goal Specification Specialist (v1.1)
 │   ├── auditor.md         # Persona: Security & Quality Gatekeeper (v1.1)
 │   ├── developer.md       # Persona: Senior Python Engineer (v1.2)
 │   ├── pedant.md          # Persona: Code Cleaner and Linter (v1.1)
-│   └── queen.md           # Persona: Lead Architect & Strategic Planner (v1.2)
+│   └── queen.md           # Persona: Lead Architect & Strategic Planner (v1.4)
 │
 ├── .claude/               # [SYSTEM] Hidden system configuration and machine cache
-│   ├── cache/             # Machine-readable state (AGENTS.md, HALT.flag)
+│   ├── cache/             # Machine-readable state (memory.db, HALT.flag, pytest-report)
 │   ├── rules/             # Engineering Iron Laws and Python coding standards
-│   │ 
-│   └── skills                      # [TOOLS] Atomic capabilities available to agents
-│       ├── cascade-logic           # [CONTROL] Advanced task chaining
-│       ├── context-compressor      # [OPTIMIZATION] ACTION_LOG pruning
-│       │   ├── scripts/summarize.py# Python script for ACTION_LOG pruning (v1.4)
-│       ├── git-manager             # [VCS] Legacy branch lifecycle scripts
-│       ├── handoff-manager         # [PERSISTENCE] State preservation
-│       │   ├── scripts/dump_state.py# State exporter (v1.2)
-│       ├── mcp-bridge              # [INTEGRATION] External tool proxy (Slack, Jira)
-│       │   ├── scripts/proxy.py    # Mockup for tool integration (v1.1)
-│       ├── quality-gate            # [LINTING] Static code analysis
-│       │   ├── scripts/check.sh    # Primary Quality Gate execution
-│       ├── security-guard          # [SECURITY] Secret and vulnerability scanning
-│       │   ├── scripts/scan.py     # Pre-commit security scanner (v1.1)
-│       └── testing-pro             # [TESTING] Pytest execution and TDD
-│           ├── scripts/coverage.py # Code coverage measurement tool (v1.2)
-│           └── scripts/verify.py   # Pytest result formatting engine (v1.2)
-│
-├── .devcontainer/         # [INFRA] Docker-based isolated environment config
-│   ├── devcontainer.json  # VS Code container settings and Python pathing
-│   └── Dockerfile         # System dependencies (Python 3.12, UV, git)
+│   └── skills             # [TOOLS] Atomic capabilities available to agents
 │
 ├── agent_context/         # [MEMORY] Runtime state and long-term project memory
-│   ├── MEMORY.md          # Project history and high-level knowledge
+│   ├── MEMORY.md          # Project history and high-level identity (v6.1)
 │   ├── SESSION.md         # Bimetric scratchpad for the current active loop
 │   ├── TASKS.md           # Goal decomposition and technical progress tracking
-│   └── TROUBLESHOOTING.md # [RAG] KB of known errors and their solutions
+│   └── TROUBLESHOOTING.md # [ACMI RAG] KB of known errors and their solutions
 │
 ├── agent_core/            # [LOGIC] The Brain: Framework orchestration engine
 │   ├── router_core/       # Internal framework modules
-│   │   ├── agent_actions.py # Pydantic schemas for AI responses
-│   │   ├── engine.py      # Main State Machine (v1.34)
-│   │   ├── git_local.py   # Native Git Wrapper
-│   │   ├── github_client.py # Native GitHub REST API Client
-│   │   ├── gh_models.py   # Pydantic models for GitHub API
-│   │   ├── llm.py         # Agnostic API Client & Prompt construction (v1.22)
-│   │   ├── managers.py    # State managers for agent_context (v1.9)
-│   │   ├── models.py      # Pydantic schemas for configuration (v1.9)
-│   │   └── utils.py       # Shared utilities and loaders (v1.10)
-│   ├── indexer.py         # Generates codebase map (AGENTS.md)
-│   ├── router.py          # CLI entry point for human/machine interaction
-│   └── validator.py       # Shield: Integrity check of secrets and structure
-│
-├── agent_native/          # [PERFORMANCE] Rust-based optimizations (Phase 2)
-│   └── info.md            # Implementation roadmap for native workers
+│   │   ├── agent_actions.py # Pydantic schemas (AtomicTask contract) (v1.1)
+│   │   ├── engine.py      # Main State Machine & Dispatcher (v2.0.2)
+│   │   ├── git_local.py   # Native Git Wrapper (v1.2)
+│   │   ├── github_client.py # Native GitHub REST API Client (v1.2)
+│   │   ├── gh_models.py   # Pydantic models for GitHub API (v1.0)
+│   │   ├── llm.py         # Agnostic API Client & RAG Heuristics (v3.10.0)
+│   │   ├── managers.py    # State managers for agent_context (v1.11.4)
+│   │   ├── models.py      # Pydantic schemas & Telemetry models (v1.14)
+│   │   └── utils.py       # Shared utilities and loaders (v1.11)
+│   ├── indexer.py         # Generates codebase map for agents (v2.1)
+│   ├── memory_engine.py   # ACMI SQLite Core (Migrations V6) (v6.0.0)
+│   ├── spec_gen.py        # Goal Specification Generator (v1.1.1)
+│   ├── router.py          # CLI entry point
+│   └── validator.py       # Shield: Integrity shield (v9.0)
 │
 ├── agent_tests/           # [SYSTEM QA] Framework-level unit tests (Kernel)
-│   ├── conftest.py        # Shared fixtures
-│   ├── e2e/test_e2e_palindrome.py # End-to-End test for Palindrome flow
-│   ├── test_git_wrapper.py# Unit tests for GitLocalManager
-│   ├── test_indexer.py    # Verification of codebase mapping logic
-│   ├── test_models.py     # Unit tests for Pydantic configuration schemas
-│   ├── test_router.py     # Core Engine unit tests (refactored)
-│   ├── test_router_logs.py# Diagnostic test for prompt injection
-│   ├── test_skills.py     # Unit tests for agent skills
-│   ├── test_validator.py  # Verification of system integrity checks
-│   └── test_vcs_flow.py   # Unit tests for VCS integration logic
-│
-├── src/                   # [APP] Target application source code (AI Playground)
-│   └── __init__.py        # Makes src a valid Python package
-│
+├── src/                   # [APP] Target application source code
 ├── tests/                 # [APP QA] Unit tests for the target application
-│   └── __init__.py        # Makes tests a valid Python package
 │
-├── .env                   # [SECRETS] API keys (rotation support) and endpoints
-├── .gitignore             # Git exclusion rules (venv, cache, local sessions)
-├── agent_orchestrator.json# [CONFIG] Master settings and API Fallback Matrix
-├── CLAUDE.md              # AI Onboarding: Absolute rules and Startup protocols
-├── Makefile               # [CONTROL PANEL] Main interface for humans and GHA
-├── pyproject.toml         # Python toolchain and dependency management
+├── .env                   # [SECRETS] API keys, Provider Config, Mock toggles
+├── agent_orchestrator.json# [CONFIG] Master pipeline settings
+├── CHANGELOG.md           # Project evolution history
+├── Makefile               # [CONTROL PANEL] Main interface for operators (v5.21)
+├── pyproject.toml         # Toolchain and quality gate configuration
 └── uv.lock                # Deterministic dependency lockfile
 ```
 
-## I. System States (State Machine)
-The system is a managed process. Every state has a strictly defined responsibility.
+## I. Core Engine v2.0 (The Central Dispatcher)
+The framework has evolved from a simple linear loop to a **Dispatcher-driven State Machine**. The `_execute_stage` method in `engine.py` acts as the central brain.
 
-| State | Agent | Responsibility |
+| State | Agent | Execution Type | Responsibility |
+| :--- | :--- | :--- | :--- |
+| **STRATEGY** | **Queen** | LLM | **Atomic Planning:** Decomposes goals into a strict `AtomicTask` (Code + Test). |
+| **EXECUTING** | **Developer** | LLM | **Implementation:** Writes logic in `src/` and tests in `tests/`. |
+| **LINTING** | **Pedant** | Hybrid | **Quality:** 1. Local `ruff` autofix. 2. AI Pedant fallback with attempt history. |
+| **TESTING** | - | Subprocess | **Verification:** Runs `pytest` in a **Read-Only Lock** mode. No LLM allowed. |
+| **VERIFYING** | **Auditor** | LLM | **Audit:** Final check after automated "Pre-flight Compression". |
+| **VCS_DELIVERY** | **Router** | Native API | **Delivery:** Git push, PR creation, and GHA status polling. |
+
+## II. ACMI RAG v2.0 (Intelligence Layer)
+The **Agent-CI Memory Intelligence** system uses a tiered retrieval strategy:
+1.  **Deterministic Mandatory Rules:** Injected directly into the prompt (e.g., *No inline imports*).
+2.  **Semantic Contextual Search:** FTS5 BM25 search retrieves the top 6 rules relevant to task keywords.
+3.  **Heuristic Keyword Extractor:** Prioritizes `backtick` terms and technical intent.
+4.  **Organic Reflections:** Stores post-mortem lessons learned from past failures.
+
+## III. Token Telemetry & Monitoring
+The system implements full observability of AI costs through the `execution_logs` database table. Every API call logs `prompt_tokens`, `completion_tokens`, and `duration_ms` with provider-specific parsing.
+
+## IV. Bimetric Safety Protocols
+*   **Bimetric Shield:** Ensures that AI agents cannot modify user-owned sections or system core files.
+*   **Testing Safety Lock:** A physical engine block that prevents any `FileWrite` operation during the TESTING state.
+
+## V. Memory Management Philosophy: Agent-CI-Lens vs. Letta (MemGPT)
+While emerging frameworks like Letta (MemGPT) focus on "Virtual Memory Paging" (agent-driven), Agent-CI-Lens prioritizes a "Hypervisor-driven" hard-state approach optimized for CI/CD.
+
+| Feature | Letta / MemGPT | Agent-CI-Lens |
 | :--- | :--- | :--- |
-| **IDLE** | - | System is resting and waiting for a new goal in the `USER_QUEUE`. |
-| **STRATEGY** | **Queen** | Combined Analysis & Planning. Assesses codebase and generates a technical task breakdown in one step. |
-| **EXECUTING** | **Developer** | Actual implementation of code in `src/` and unit tests in `tests/`. |
-| **LINTING** | **Pedant** | Automated quality gate. **1st:** Runs local "Dumb Pedant" (`ruff` autofix). **2nd:** If errors persist, escalates to AI Pedant. |
-| **TESTING** | **Developer** | Execution of `pytest` to verify logical correctness. |
-| **VERIFYING** | **Auditor** | Final security and quality audit. **1st:** Runs "Pre-flight Compression" to clean context. **2nd:** Invokes AI Auditor. |
-| **VCS_DELIVERY** | **Router** | Executes Git operations (push, PR) and polls GitHub Actions status. |
-| **BLOCKED** | - | **Stopped:** Task failed maximum retry attempts. Requires human operator intervention. |
+| **Memory Management** | **Agent-Driven:** Agent decides what to store/page. | **Hypervisor-Driven:** Engine manages context via RAG. |
+| **Cognitive Load** | High (Agent manages logic + memory). | **Low:** Agent focuses purely on implementation. |
+| **Auditability** | ❌ Low (Memory stored in hidden JSON/DB). | ✅ **High:** Human-readable Markdown (`SESSION.md`). |
+| **Reproducibility** | ❌ Non-deterministic. | ✅ **High:** Git-linked state snapshots. |
+| **Trust Model** | Probabilistic. | **Deterministic:** Hard-coded "Iron Laws" (Mandatory Rules). |
 
-### Emergency Protocol: **HALT**
-This is not a state, but an **emergency brake**. It activates immediately upon detection of an API key leak (Security Guard) or a critical system error. A `HALT.flag` file is created, physically blocking any further execution until the operator clears the error via `make clean`.
-
----
-
-## II. Bimetric Communication Protocol
-The system communicates asynchronously via files in `agent_context/`. This is the foundation of the human-in-the-loop workflow.
-
-### 1. Direction: User ➡️ AI (Commanding the Machine)
-*   **Global Goals:** Add a new `- [ ] GOAL-XXX` to `agent_context/TASKS.md`.
-*   **Contextual Instructions:** Write specific requirements into `agent_context/SESSION.md`.
-
-### 2. Direction: AI ➡️ User (Feedback)
-*   **Technical Progress:** Queen decomposes goals into technical steps in `TASKS.md`.
-*   **Action Log:** A detailed log of agent activities is maintained in `SESSION.md`.
-*   **Visual Logging:** The terminal displays emoji-coded status during pipeline execution.
-
----
-
-## III. User Control Panel (Makefile Interface)
-The `Makefile` serves as the primary dashboard for the operator:
-*   **`make boot`**: Full initialization (syncs dependencies, validates system, indexes code).
-*   **`make status`**: Status report (shows HALT status, current state, active tasks).
-*   **`make pipeline`**: Starts the "engine". AI cycles through states until the goal is achieved.
-*   **`make clean`**: **Smart Reset.** Clears agent logs and releases BLOCKED/HALT states while preserving user instructions.
-*   **`make mock`**: Simulation mode. Runs the flow using mock responses to save API tokens.
-
----
-
-## IV. Master Configuration (`agent_orchestrator.json`)
-The command center of the orchestrator, managing high-level logic and resilience.
-
-### 1. Global Workflow (`workflow_global`)
-*   **`ci_mode`**: Switches between `local` and `github`.
-*   **`loop_mode`**: If `true`, the orchestrator automatically processes the next task.
-*   **`loop_delay_seconds`**: Anti-spam delay between LLM calls.
-*   **`max_task_attempts`**: Master circuit breaker.
-
-### 2. Local Stages (`workflow_local`)
-*   **`active`**: Toggles the phase on/off.
-*   **`max_retries`**: Number of attempts for a specific stage.
-*   **`requires_llm`**: If `false`, the stage runs locally (e.g., LINTING) and uses a 0.1s adaptive delay.
-
-### 3. API Resilience (`resilience`)
-*   **`smart_fallback`**: Automatically switches providers (e.g., Groq to Mistral).
-*   **`fallback_matrix`**: Defines the backup model and provider.
-
----
-
-## V. Future Perspective: ACMI (Agent-CI Memory Intelligence)
-The framework is prepared for a Phase 4 transition to a database-driven memory engine (SQLite):
-1.  **AST Indexing:** Codebase will be indexed into a queryable database, allowing agents to retrieve specific function signatures instead of parsing large files.
-2.  **Execution History:** Test results and agent decisions will be logged structurally, enabling the Auditor to make decisions based on data, not text logs.
-3.  **System Reflection:** The orchestrator will learn from past failures by storing error patterns and successful solutions, which will be injected as "Memory Warnings" into future prompts.
-```
+**Inference:** In a production environment, predictability and auditability are more valuable than memory flexibility. By offloading memory management to the Hypervisor, we eliminate hallucinations about the system's own state.
